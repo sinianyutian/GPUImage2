@@ -6,7 +6,7 @@ public class MovieInput: ImageSource {
     
     let yuvConversionShader:ShaderProgram
     let asset:AVAsset
-    let assetReader:AVAssetReader
+    private(set) var assetReader:AVAssetReader
     let playAtActualSpeed:Bool
     let loop:Bool
     var videoEncodingIsFinished = false
@@ -24,12 +24,7 @@ public class MovieInput: ImageSource {
         self.loop = loop
         self.yuvConversionShader = crashOnShaderCompileFailure("MovieInput"){try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(2), fragmentShader:YUVConversionFullRangeFragmentShader)}
         
-        assetReader = try AVAssetReader(asset:self.asset)
-        
-        let outputSettings:[String:AnyObject] = [(kCVPixelBufferPixelFormatTypeKey as String):NSNumber(value:Int32(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange))]
-        let readerVideoTrackOutput = AVAssetReaderTrackOutput(track:self.asset.tracks(withMediaType: AVMediaType.video)[0], outputSettings:outputSettings)
-        readerVideoTrackOutput.alwaysCopiesSampleData = false
-        assetReader.add(readerVideoTrackOutput)
+        assetReader = try MovieInput.createReader(asset: asset)
         // TODO: Audio here
     }
 
@@ -42,6 +37,17 @@ public class MovieInput: ImageSource {
     // MARK: -
     // MARK: Playback control
 
+    private static func createReader(asset: AVAsset) throws -> AVAssetReader {
+        let assetReader = try AVAssetReader(asset: asset)
+
+        let outputSettings:[String:AnyObject] = [(kCVPixelBufferPixelFormatTypeKey as String):NSNumber(value:Int32(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange))]
+        let readerVideoTrackOutput = AVAssetReaderTrackOutput(track: asset.tracks(withMediaType: AVMediaType.video)[0], outputSettings:outputSettings)
+        readerVideoTrackOutput.alwaysCopiesSampleData = false
+        assetReader.add(readerVideoTrackOutput)
+
+        return assetReader
+    }
+
     public func start() {
         asset.loadValuesAsynchronously(forKeys:["tracks"], completionHandler:{
             DispatchQueue.global().async(execute: {
@@ -51,24 +57,26 @@ public class MovieInput: ImageSource {
                     print("Couldn't start reading")
                     return
                 }
-                
+
                 var readerVideoTrackOutput:AVAssetReaderOutput? = nil;
-                
+
                 for output in self.assetReader.outputs {
                     if(output.mediaType == AVMediaType.video.rawValue) {
                         readerVideoTrackOutput = output;
                     }
                 }
-                
+
                 while (self.assetReader.status == .reading) {
                     self.readNextVideoFrame(from:readerVideoTrackOutput!)
                 }
-                
+
                 if (self.assetReader.status == .completed) {
                     self.assetReader.cancelReading()
-                    
-                    if (self.loop) {
+
+                    if self.loop, let newReader = try? MovieInput.createReader(asset: self.asset) {
                         // TODO: Restart movie processing
+                        self.assetReader = newReader
+                        self.start()
                     } else {
                         self.endProcessing()
                     }
