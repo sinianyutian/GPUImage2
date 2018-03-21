@@ -191,6 +191,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         guard let assetWriterAudioInput = assetWriterAudioInput else { return }
         
         sharedImageProcessingContext.runOperationSynchronously{
+            guard isRecording else { return }
+
             let currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
             if (self.startTime == nil) {
                 if (self.assetWriter.status != .writing) {
