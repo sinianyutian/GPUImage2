@@ -43,7 +43,45 @@ let initialBenchmarkFramesToIgnore = 5
 public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
     public var location:PhysicalCameraLocation {
         didSet {
-            // TODO: Swap the camera locations, framebuffers as needed
+            if oldValue == location {
+                return
+            }
+
+            // Swap the camera locations, framebuffers as needed
+
+            let devicePosition: AVCaptureDevice.Position
+            switch location {
+            case .backFacing:
+                devicePosition = .back
+            case .frontFacing:
+                devicePosition = .front
+            }
+
+            guard let device = AVCaptureDevice.devices(for: .video).first(where: {
+                $0.position == devicePosition
+            }) else {
+                fatalError("ERROR: Can't find video devices for \(devicePosition)")
+            }
+
+            do {
+                let newVideoInput = try AVCaptureDeviceInput(device: device)
+                captureSession.beginConfiguration()
+
+                captureSession.removeInput(videoInput)
+                if captureSession.canAddInput(newVideoInput) {
+                    captureSession.addInput(newVideoInput)
+                } else {
+                    captureSession.addInput(videoInput)
+                }
+
+                Camera.updateOrientation(location: location, videoOutput: videoOutput)
+
+                captureSession.commitConfiguration()
+
+                videoInput = newVideoInput
+            } catch let error {
+                fatalError("ERROR: Could not init device: \(error)")
+            }
         }
     }
     public var runBenchmark:Bool = false
@@ -67,7 +105,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public var delegate: CameraDelegate?
     public let captureSession:AVCaptureSession
     let inputCamera:AVCaptureDevice!
-    let videoInput:AVCaptureDeviceInput!
+    private(set) var videoInput:AVCaptureDeviceInput!
     let videoOutput:AVCaptureVideoDataOutput!
     var microphone:AVCaptureDevice?
     var audioInput:AVCaptureDeviceInput?
@@ -151,19 +189,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         }
         captureSession.sessionPreset = sessionPreset
 
-        var captureConnection: AVCaptureConnection!
-        for connection in videoOutput.connections {
-            for port in connection.inputPorts {
-                if (port as AnyObject).mediaType == AVMediaType.video {
-                    captureConnection = connection
-                    captureConnection.isVideoMirrored = location == .frontFacing
-                }
-            }
-        }
-        if captureConnection.isVideoOrientationSupported {
-            captureConnection.videoOrientation = .portrait
-        }
-        
+        Camera.updateOrientation(location: location, videoOutput: videoOutput)
+
         captureSession.commitConfiguration()
 
         super.init()
@@ -338,5 +365,23 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     
     func processAudioSampleBuffer(_ sampleBuffer:CMSampleBuffer) {
         self.audioEncodingTarget?.processAudioBuffer(sampleBuffer)
+    }
+}
+
+private extension Camera {
+    static func updateOrientation(location: PhysicalCameraLocation, videoOutput: AVCaptureOutput) {
+        var captureConnection: AVCaptureConnection!
+        for connection in videoOutput.connections {
+            for port in connection.inputPorts {
+                if port.mediaType == .video {
+                    captureConnection = connection
+                    captureConnection.isVideoMirrored = location == .frontFacing
+                }
+            }
+        }
+
+        if captureConnection.isVideoOrientationSupported {
+            captureConnection.videoOrientation = .portrait
+        }
     }
 }
