@@ -28,24 +28,26 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     private var encodingLiveVideo:Bool
     var pixelBuffer:CVPixelBuffer? = nil
     var renderFramebuffer:Framebuffer!
+    private let audioSettings: [String: Any]?
     
-    public init(URL:Foundation.URL, size:Size, fileType:AVFileType = AVFileType.mov, liveVideo:Bool = false, settings:[String:AnyObject]? = nil) throws {
+    public init(URL:Foundation.URL, size:Size, fileType:AVFileType = AVFileType.mov, liveVideo:Bool = false, settings:[String:Any]? = nil, audioSettings:[String: Any]? = nil) throws {
         if sharedImageProcessingContext.supportsTextureCaches() {
             self.colorSwizzlingShader = sharedImageProcessingContext.passthroughShader
         } else {
             self.colorSwizzlingShader = crashOnShaderCompileFailure("MovieOutput"){try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(1), fragmentShader:ColorSwizzlingFragmentShader)}
         }
-        
+
+        self.audioSettings = audioSettings
         self.size = size
         assetWriter = try AVAssetWriter(url:URL, fileType:fileType)
         // Set this to make sure that a functional movie is produced, even if the recording is cut off mid-stream. Only the last second should be lost in that case.
         assetWriter.movieFragmentInterval = CMTimeMakeWithSeconds(1.0, 1000)
         
-        var localSettings:[String:AnyObject]
+        var localSettings:[String:Any]
         if let settings = settings {
             localSettings = settings
         } else {
-            localSettings = [String:AnyObject]()
+            localSettings = [String:Any]()
         }
         
         localSettings[AVVideoWidthKey] = localSettings[AVVideoWidthKey] ?? NSNumber(value:size.width)
@@ -205,8 +207,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     // MARK: Audio support
 
     public func activateAudioTrack() {
-        // TODO: Add ability to set custom output settings
-        assetWriterAudioInput = AVAssetWriterInput(mediaType:AVMediaType.audio, outputSettings:nil)
+        assetWriterAudioInput = AVAssetWriterInput(mediaType:AVMediaType.audio, outputSettings:audioSettings)
         assetWriter.add(assetWriterAudioInput!)
         assetWriterAudioInput?.expectsMediaDataInRealTime = encodingLiveVideo
     }
