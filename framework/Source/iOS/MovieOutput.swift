@@ -30,6 +30,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     var renderFramebuffer:Framebuffer!
     private let audioSettings: [String: Any]?
     
+    deinit {
+        debugPrint("Deallocating MovieOutput: \(self)")
+    }
+    
     public init(URL:Foundation.URL, size:Size, fileType:AVFileType = AVFileType.mov, liveVideo:Bool = false, settings:[String:Any]? = nil, audioSettings:[String: Any]? = nil) throws {
         if sharedImageProcessingContext.supportsTextureCaches() {
             self.colorSwizzlingShader = sharedImageProcessingContext.passthroughShader

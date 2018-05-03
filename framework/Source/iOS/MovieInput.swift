@@ -15,6 +15,12 @@ public class MovieInput: ImageSource {
 
     var numberOfFramesCaptured = 0
     var totalFrameTimeDuringCapture:Double = 0.0
+    
+    var completionCallback: (() -> Void)? = nil
+    
+    deinit {
+        debugPrint("Deallocating MovieInput: \(self)")
+    }
 
     // TODO: Add movie reader synchronization
     // TODO: Someone will have to add back in the AVPlayerItem logic, because I don't know how that works
@@ -48,7 +54,9 @@ public class MovieInput: ImageSource {
         return assetReader
     }
 
-    public func start() {
+    public func start(completion: (() -> Void)? = nil) {
+        completionCallback = completion
+        
         asset.loadValuesAsynchronously(forKeys:["tracks"], completionHandler:{
             DispatchQueue.global().async(execute: {
                 guard (self.asset.statusOfValue(forKey: "tracks", error:nil) == .loaded) else { return }
@@ -91,7 +99,10 @@ public class MovieInput: ImageSource {
     }
     
     func endProcessing() {
-        
+        if let callback = completionCallback {
+            callback()
+            completionCallback = nil
+        }
     }
     
     // MARK: -
