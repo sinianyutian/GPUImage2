@@ -171,6 +171,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             return
         }
         
+        while (!assetWriterVideoInput.isReadyForMoreMediaData) {
+            let maxDate = Date(timeIntervalSinceNow: 0.1)
+            RunLoop.current.run(until: maxDate)
+        }
+        
         if !sharedImageProcessingContext.supportsTextureCaches() {
             let pixelBufferStatus = CVPixelBufferPoolCreatePixelBuffer(nil, assetWriterPixelBufferInput.pixelBufferPool!, &pixelBuffer)
             guard ((pixelBuffer != nil) && (pixelBufferStatus == kCVReturnSuccess)) else { return }
