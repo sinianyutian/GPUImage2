@@ -78,6 +78,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
 
                 captureSession.commitConfiguration()
 
+                inputCamera = device
                 videoInput = newVideoInput
             } catch let error {
                 fatalError("ERROR: Could not init device: \(error)")
@@ -104,8 +105,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public let targets = TargetContainer()
     public var delegate: CameraDelegate?
     public let captureSession:AVCaptureSession
-    let inputCamera:AVCaptureDevice!
-    private(set) var videoInput:AVCaptureDeviceInput!
+    public private(set) var inputCamera:AVCaptureDevice!
+    public private(set) var videoInput:AVCaptureDeviceInput!
     let videoOutput:AVCaptureVideoDataOutput!
     var microphone:AVCaptureDevice?
     var audioInput:AVCaptureDeviceInput?
