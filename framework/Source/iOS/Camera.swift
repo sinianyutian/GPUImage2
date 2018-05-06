@@ -12,9 +12,9 @@ public enum PhysicalCameraLocation {
     // Documentation: "The front-facing camera would always deliver buffers in AVCaptureVideoOrientationLandscapeLeft and the back-facing camera would always deliver buffers in AVCaptureVideoOrientationLandscapeRight."
     func imageOrientation() -> ImageOrientation {
         switch self {
-            case .backFacing: return .landscapeRight
-            case .frontFacing: return .landscapeLeft
-            case .frontFacingMirrored: return .landscapeLeft
+            case .backFacing: return .portrait
+            case .frontFacing: return .portrait
+            case .frontFacingMirrored: return .portrait
         }
     }
     
@@ -46,7 +46,34 @@ let initialBenchmarkFramesToIgnore = 5
 public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
     public var location:PhysicalCameraLocation {
         didSet {
-            // TODO: Swap the camera locations, framebuffers as needed
+            if oldValue == location { return }
+            
+            let devicePosition = location.captureDevicePosition()
+            
+            guard let device = AVCaptureDevice.devices(withMediaType: AVMediaTypeVideo).first(where: {
+                ($0 as? AVCaptureDevice)?.position == devicePosition
+            }) as? AVCaptureDevice else {
+                fatalError("ERROR: Can't find video devices for \(devicePosition)")
+            }
+            
+            do {
+                let newVideoInput = try AVCaptureDeviceInput(device: device)
+                captureSession.beginConfiguration()
+                
+                captureSession.removeInput(videoInput)
+                if captureSession.canAddInput(newVideoInput) {
+                    captureSession.addInput(newVideoInput)
+                    videoInput = newVideoInput
+                } else {
+                    captureSession.addInput(videoInput)
+                }
+                
+                Camera.updateOrientation(location: location, videoOutput: videoOutput)
+                
+                captureSession.commitConfiguration()
+            } catch let error {
+                fatalError("ERROR: Could not init device: \(error)")
+            }
         }
     }
     public var runBenchmark:Bool = false
@@ -69,7 +96,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public weak var delegate: CameraDelegate?
     public let captureSession:AVCaptureSession
     public let inputCamera:AVCaptureDevice!
-    public let videoInput:AVCaptureDeviceInput!
+    public private(set) var videoInput:AVCaptureDeviceInput!
     public let videoOutput:AVCaptureVideoDataOutput!
     public var microphone:AVCaptureDevice?
     public var audioInput:AVCaptureDeviceInput?
@@ -156,13 +183,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         }
         captureSession.sessionPreset = sessionPreset
         
-        if let connections = videoOutput.connections as? [AVCaptureConnection] {
-            for connection in connections {
-                if(connection.isVideoMirroringSupported) {
-                    connection.isVideoMirrored = (location == .frontFacingMirrored)
-                }
-            }
-        }
+        Camera.updateOrientation(location: location, videoOutput: videoOutput)
 
         captureSession.commitConfiguration()
 
@@ -358,5 +379,20 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     
     func processAudioSampleBuffer(_ sampleBuffer:CMSampleBuffer) {
         self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: false)
+    }
+}
+
+private extension Camera {
+    static func updateOrientation(location: PhysicalCameraLocation, videoOutput: AVCaptureOutput) {
+        if let connections = videoOutput.connections as? [AVCaptureConnection] {
+            for connection in connections {
+                if connection.isVideoMirroringSupported {
+                    connection.isVideoMirrored = (location == .frontFacingMirrored)
+                }
+                if connection.isVideoOrientationSupported {
+                    connection.videoOrientation = .portrait
+                }
+            }
+        }
     }
 }
