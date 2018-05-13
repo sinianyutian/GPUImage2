@@ -48,12 +48,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         didSet {
             if oldValue == location { return }
             
-            let devicePosition = location.captureDevicePosition()
-            
-            guard let device = AVCaptureDevice.devices(withMediaType: AVMediaTypeVideo).first(where: {
-                ($0 as? AVCaptureDevice)?.position == devicePosition
-            }) as? AVCaptureDevice else {
-                fatalError("ERROR: Can't find video devices for \(devicePosition)")
+            guard let device = location.device() else {
+                fatalError("ERROR: Can't find video devices for \(location)")
             }
             
             do {
@@ -92,6 +88,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         }
     }
     
+    public private(set) var photoOutput: AVCapturePhotoOutput?
+    
     public let targets = TargetContainer()
     public weak var delegate: CameraDelegate?
     public let captureSession:AVCaptureSession
@@ -117,7 +115,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     
     var captureSessionRestartAttempts = 0
 
-    public init(sessionPreset:String, cameraDevice:AVCaptureDevice? = nil, location:PhysicalCameraLocation = .backFacing, captureAsYUV:Bool = true) throws {
+    public init(sessionPreset:String, cameraDevice:AVCaptureDevice? = nil, location:PhysicalCameraLocation = .backFacing, captureAsYUV:Bool = true, photoOutput: AVCapturePhotoOutput? = nil) throws {
         
         self.location = location
         self.captureAsYUV = captureAsYUV
@@ -181,7 +179,21 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         if (captureSession.canAddOutput(videoOutput)) {
             captureSession.addOutput(videoOutput)
         }
+        
+        if let photoOutput = photoOutput {
+            self.photoOutput = photoOutput
+            if (captureSession.canAddOutput(photoOutput)) {
+                captureSession.addOutput(photoOutput)
+            }
+        }
+        
         captureSession.sessionPreset = sessionPreset
+        
+        let videoOutputConnection = videoOutput.connections.first as! AVCaptureConnection
+        if videoOutputConnection.isVideoStabilizationSupported {
+            videoOutputConnection.preferredVideoStabilizationMode = .standard
+        }
+        print("isVideoStabilizationSupported: \(videoOutputConnection.isVideoStabilizationSupported), activeVideoStabilizationMode: \(videoOutputConnection.activeVideoStabilizationMode.rawValue)")
         
         Camera.updateOrientation(location: location, videoOutput: videoOutput)
 
@@ -193,6 +205,19 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         
         NotificationCenter.default.addObserver(self, selector: #selector(Camera.captureSessionRuntimeError(note:)), name: NSNotification.Name.AVCaptureSessionRuntimeError, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(Camera.captureSessionDidStartRunning(note:)), name: NSNotification.Name.AVCaptureSessionDidStartRunning, object: nil)
+    }
+    
+    public func captureStillImage(delegate: AVCapturePhotoCaptureDelegate, settings: AVCapturePhotoSettings? = nil) {
+        guard let photoOutput = photoOutput else {
+            fatalError("didn't setup photo output")
+        }
+        
+        let photoSettings = settings ?? AVCapturePhotoSettings()
+        
+        photoSettings.isAutoStillImageStabilizationEnabled = photoOutput.isStillImageStabilizationSupported
+        
+        print("isStillImageStabilizationSupported: \(photoOutput.isStillImageStabilizationSupported), isStillImageStabilizationScene: \(photoOutput.isStillImageStabilizationScene)")
+        photoOutput.capturePhoto(with: photoSettings, delegate: delegate)
     }
     
     deinit {
