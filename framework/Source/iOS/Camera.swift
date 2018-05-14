@@ -214,7 +214,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         
         let photoSettings = settings ?? AVCapturePhotoSettings()
         
-        photoSettings.isAutoStillImageStabilizationEnabled = photoOutput.isStillImageStabilizationSupported
+//        photoSettings.isAutoStillImageStabilizationEnabled = photoOutput.isStillImageStabilizationSupported
         
         print("isStillImageStabilizationSupported: \(photoOutput.isStillImageStabilizationSupported), isStillImageStabilizationScene: \(photoOutput.isStillImageStabilizationScene)")
         photoOutput.capturePhoto(with: photoSettings, delegate: delegate)
