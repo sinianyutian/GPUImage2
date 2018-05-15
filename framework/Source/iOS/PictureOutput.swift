@@ -9,6 +9,7 @@ public enum PictureFileFormat {
 public class PictureOutput: ImageConsumer {
     public var encodedImageAvailableCallback:((Data) -> ())?
     public var encodedImageFormat:PictureFileFormat = .png
+    public var encodedJPEGImageCompressionQuality: CGFloat = 0.8
     public var imageAvailableCallback:((UIImage) -> ())?
     public var onlyCaptureNextFrame:Bool = true
     public var keepImageAroundForSynchronousCapture:Bool = false
@@ -81,7 +82,7 @@ public class PictureOutput: ImageConsumer {
             let imageData:Data
             switch encodedImageFormat {
                 case .png: imageData = UIImagePNGRepresentation(image)! // TODO: Better error handling here
-                case .jpeg: imageData = UIImageJPEGRepresentation(image, 0.8)! // TODO: Be able to set image quality
+                case .jpeg: imageData = UIImageJPEGRepresentation(image, encodedJPEGImageCompressionQuality)!
             }
             
             imageCallback(imageData)
