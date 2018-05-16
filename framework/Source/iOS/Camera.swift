@@ -60,11 +60,12 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
                 if captureSession.canAddInput(newVideoInput) {
                     captureSession.addInput(newVideoInput)
                     videoInput = newVideoInput
+                    
+                    Camera.updateVideoOutput(location: location, videoOutput: videoOutput)
                 } else {
+                    print("Can't add video input")
                     captureSession.addInput(videoInput)
                 }
-                
-                Camera.updateOrientation(location: location, videoOutput: videoOutput)
                 
                 captureSession.commitConfiguration()
             } catch let error {
@@ -189,13 +190,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         
         captureSession.sessionPreset = sessionPreset
         
-        let videoOutputConnection = videoOutput.connections.first as! AVCaptureConnection
-        if videoOutputConnection.isVideoStabilizationSupported {
-            videoOutputConnection.preferredVideoStabilizationMode = .standard
-        }
-        print("isVideoStabilizationSupported: \(videoOutputConnection.isVideoStabilizationSupported), activeVideoStabilizationMode: \(videoOutputConnection.activeVideoStabilizationMode.rawValue)")
-        
-        Camera.updateOrientation(location: location, videoOutput: videoOutput)
+        Camera.updateVideoOutput(location: location, videoOutput: videoOutput)
 
         captureSession.commitConfiguration()
 
@@ -408,15 +403,22 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
 }
 
 private extension Camera {
-    static func updateOrientation(location: PhysicalCameraLocation, videoOutput: AVCaptureOutput) {
+    static func updateVideoOutput(location: PhysicalCameraLocation, videoOutput: AVCaptureOutput) {
         if let connections = videoOutput.connections as? [AVCaptureConnection] {
             for connection in connections {
                 if connection.isVideoMirroringSupported {
                     connection.isVideoMirrored = (location == .frontFacingMirrored)
                 }
+                
                 if connection.isVideoOrientationSupported {
                     connection.videoOrientation = .portrait
                 }
+                
+                if connection.isVideoStabilizationSupported {
+                    connection.preferredVideoStabilizationMode = .standard
+                }
+                
+                print("isVideoStabilizationSupported: \(connection.isVideoStabilizationSupported), activeVideoStabilizationMode: \(connection.activeVideoStabilizationMode.rawValue)")
             }
         }
     }
