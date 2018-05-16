@@ -58,6 +58,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
                 
                 captureSession.removeInput(videoInput)
                 if captureSession.canAddInput(newVideoInput) {
+                    inputCamera = device
                     captureSession.addInput(newVideoInput)
                     videoInput = newVideoInput
                     
@@ -94,7 +95,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public let targets = TargetContainer()
     public weak var delegate: CameraDelegate?
     public let captureSession:AVCaptureSession
-    public let inputCamera:AVCaptureDevice!
+    public private(set) var inputCamera:AVCaptureDevice!
     public private(set) var videoInput:AVCaptureDeviceInput!
     public let videoOutput:AVCaptureVideoDataOutput!
     public var microphone:AVCaptureDevice?
