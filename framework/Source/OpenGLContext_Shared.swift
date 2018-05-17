@@ -99,8 +99,18 @@ extension OpenGLContext {
     }
 }
 
+public var GPUImageLogger: (String, StaticString, UInt, StaticString) -> () = { stringToPrint, file, line, function in
+    Swift.print("\(stringToPrint) --> \((String(describing:file) as NSString).lastPathComponent): \(function): \(line)")
+}
+
 @_semantics("sil.optimize.never") public func debugPrint(_ stringToPrint:String, file: StaticString = #file, line: UInt = #line, function: StaticString = #function) {
     #if DEBUG
-        print("\(stringToPrint) --> \((String(describing:file) as NSString).lastPathComponent): \(function): \(line)")
+    print(stringToPrint, file: file, line: line, function: function)
     #endif
 }
+
+@_semantics("sil.optimize.never") public func print(_ stringToPrint:String, file: StaticString = #file, line: UInt = #line, function: StaticString = #function) {
+    GPUImageLogger(stringToPrint, file, line, function)
+}
+
+
