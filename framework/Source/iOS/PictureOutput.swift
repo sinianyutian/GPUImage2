@@ -11,6 +11,7 @@ public class PictureOutput: ImageConsumer {
     public var encodedImageFormat:PictureFileFormat = .png
     public var encodedJPEGImageCompressionQuality: CGFloat = 0.8
     public var imageAvailableCallback:((UIImage) -> ())?
+    public var cgImageAvailableCallback:((CGImage) -> ())?
     public var onlyCaptureNextFrame:Bool = true
     public var keepImageAroundForSynchronousCapture:Bool = false
     var storedFramebuffer:Framebuffer?
@@ -61,6 +62,16 @@ public class PictureOutput: ImageConsumer {
         if keepImageAroundForSynchronousCapture {
             storedFramebuffer?.unlock()
             storedFramebuffer = framebuffer
+        }
+        
+        if let imageCallback = cgImageAvailableCallback {
+            let cgImageFromBytes = cgImageFromFramebuffer(framebuffer)
+            
+            imageCallback(cgImageFromBytes)
+            
+            if onlyCaptureNextFrame {
+                cgImageAvailableCallback = nil
+            }
         }
         
         if let imageCallback = imageAvailableCallback {
