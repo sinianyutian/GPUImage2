@@ -88,6 +88,8 @@ public class MovieInput: ImageSource {
     }
     
     deinit {
+        debugPrint("movie input deinit \(asset)")
+        
         self.movieFramebuffer?.unlock()
         self.cancel()
         

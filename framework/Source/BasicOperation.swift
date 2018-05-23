@@ -78,7 +78,7 @@ open class BasicOperation: ImageProcessingOperation {
     }
     
     deinit {
-        //debugPrint("Deallocating operation: \(self)")
+        debugPrint("Deallocating operation: \(self)")
     }
     
     // MARK: -

@@ -58,6 +58,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     var synchronizedEncodingDebug = false
     var totalFramesAppended:Int = 0
     
+    deinit {
+        debugPrint("movie output deinit \(assetWriter.outputURL)")
+    }
+    
     public init(URL:Foundation.URL, size:Size, fileType:String = AVFileTypeQuickTimeMovie, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil) throws {
         imageProcessingShareGroup = sharedImageProcessingContext.context.sharegroup
         let movieProcessingContext = OpenGLContext()
