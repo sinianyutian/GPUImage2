@@ -6,6 +6,7 @@ public class BilateralBlur: TwoStageOperation {
     public init() {
         super.init(vertexShader:BilateralBlurVertexShader, fragmentShader:BilateralBlurFragmentShader)
         
+        downsamplingFactor = 4.0
         ({distanceNormalizationFactor = 1.0})()
     }
 }
