@@ -40,6 +40,7 @@ public class MovieInput: ImageSource {
     
     // Called after the video finishes. Not called when cancel() or pause() is called.
     public var completion: (() -> Void)?
+    public var startProcessingCallback: (() -> Void)?
     // Progress block of the video with a paramater value of 0-1.
     // Can be used to check video encoding progress. Not called from main thread.
     public var progress: ((Double) -> Void)?
@@ -175,6 +176,12 @@ public class MovieInput: ImageSource {
     }
     
     @objc func beginReading() {
+        if let startProcessingCallback = startProcessingCallback {
+            DispatchQueue.main.sync {
+                startProcessingCallback()
+            }
+        }
+        
         let thread = Thread.current
         
         mach_timebase_info(&timebaseInfo)
