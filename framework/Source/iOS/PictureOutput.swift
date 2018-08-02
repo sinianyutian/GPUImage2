@@ -21,9 +21,11 @@ public class PictureOutput: ImageConsumer {
     var url:URL!
     
     public init() {
+        debugPrint("PictureOutput init")
     }
     
     deinit {
+        debugPrint("PictureOutput deinit")
     }
     
     public func saveNextFrameToURL(_ url:URL, format:PictureFileFormat) {

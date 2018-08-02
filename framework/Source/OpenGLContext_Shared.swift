@@ -105,7 +105,7 @@ public var GPUImageLogger: (String, StaticString, UInt, StaticString) -> () = { 
 
 @_semantics("sil.optimize.never") public func debugPrint(_ stringToPrint:String, file: StaticString = #file, line: UInt = #line, function: StaticString = #function) {
     #if DEBUG
-    print(stringToPrint, file: file, line: line, function: function)
+    print("[GPUImage] " + stringToPrint, file: file, line: line, function: function)
     #endif
 }
 

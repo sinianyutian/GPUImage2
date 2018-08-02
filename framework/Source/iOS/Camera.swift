@@ -118,6 +118,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     var captureSessionRestartAttempts = 0
 
     public init(sessionPreset:String, cameraDevice:AVCaptureDevice? = nil, location:PhysicalCameraLocation = .backFacing, captureAsYUV:Bool = true, photoOutput: AVCapturePhotoOutput? = nil, metadataDelegate: AVCaptureMetadataOutputObjectsDelegate? = nil) throws {
+
+        debugPrint("camera init")
         
         self.location = location
         self.captureAsYUV = captureAsYUV
@@ -227,6 +229,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     }
     
     deinit {
+        debugPrint("camera deinit")
+
         let captureSession = self.captureSession
         DispatchQueue.global().async {
             if (captureSession.isRunning) {

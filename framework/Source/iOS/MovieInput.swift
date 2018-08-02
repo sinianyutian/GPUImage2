@@ -74,6 +74,8 @@ public class MovieInput: ImageSource {
     
     // TODO: Someone will have to add back in the AVPlayerItem logic, because I don't know how that works
     public init(asset:AVAsset, videoComposition: AVVideoComposition?, playAtActualSpeed:Bool = false, loop:Bool = false, audioSettings:[String:Any]? = nil) throws {
+        debugPrint("movie input init \(asset)")
+
         self.asset = asset
         self.videoComposition = videoComposition
         self.playAtActualSpeed = playAtActualSpeed
