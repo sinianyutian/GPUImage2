@@ -4,6 +4,10 @@ public protocol MovieInputDelegate: class {
     func didFinishMovie()
 }
 
+enum MovieInputError: Error {
+    case cannotCreateAssetReader
+}
+
 public class MovieInput: ImageSource {
     public let targets = TargetContainer()
     public var runBenchmark = false
@@ -39,7 +43,7 @@ public class MovieInput: ImageSource {
     public var loop:Bool
     
     // Called after the video finishes. Not called when cancel() or pause() is called.
-    public var completion: (() -> Void)?
+    public var completion: ((Error?) -> Void)?
     public var startProcessingCallback: (() -> Void)?
     // Progress block of the video with a paramater value of 0-1.
     // Can be used to check video encoding progress. Not called from main thread.
@@ -200,6 +204,7 @@ public class MovieInput: ImageSource {
         }
         
         guard let assetReader = self.createReader() else {
+            completion?(MovieInputError.cannotCreateAssetReader)
             return // A return statement in this frame will end thread execution.
         }
         
@@ -207,12 +212,14 @@ public class MovieInput: ImageSource {
             try NSObject.catchException {
                 guard assetReader.startReading() else {
                     print("ERROR: Unable to start reading: \(String(describing: assetReader.error))")
+                    self.completion?(assetReader.error)
                     return
                 }
             }
         }
         catch {
             print("ERROR: Unable to start reading: \(error)")
+            completion?(error)
             return
         }
         
@@ -270,7 +277,7 @@ public class MovieInput: ImageSource {
             }
             else {
                 self.delegate?.didFinishMovie()
-                self.completion?()
+                self.completion?(nil)
                 
                 self.synchronizedEncodingDebugPrint("MovieInput finished reading")
                 self.synchronizedEncodingDebugPrint("MovieInput total frames sent: \(self.totalFramesSent)")
