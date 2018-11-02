@@ -61,8 +61,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
                     inputCamera = device
                     captureSession.addInput(newVideoInput)
                     videoInput = newVideoInput
-                    
-                    Camera.updateVideoOutput(location: location, videoOutput: videoOutput)
+                    let stableMode = (location == .backFacing ? backCaemraStableMode : frontCameraStableMode)
+                    Camera.updateVideoOutput(location: location, videoOutput: videoOutput, stableMode:stableMode)
                 } else {
                     print("Can't add video input")
                     captureSession.addInput(videoInput)
@@ -102,6 +102,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public var audioInput:AVCaptureDeviceInput?
     public var audioOutput:AVCaptureAudioDataOutput?
     public var dontDropFrames: Bool = false
+    public var backCaemraStableMode: AVCaptureVideoStabilizationMode = .standard
+    public var frontCameraStableMode: AVCaptureVideoStabilizationMode = .standard
 
     var supportsFullYUVRange:Bool = false
     let captureAsYUV:Bool
@@ -423,7 +425,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
 }
 
 private extension Camera {
-    static func updateVideoOutput(location: PhysicalCameraLocation, videoOutput: AVCaptureOutput) {
+    static func updateVideoOutput(location: PhysicalCameraLocation, videoOutput: AVCaptureOutput, stableMode: AVCaptureVideoStabilizationMode = .standard) {
         if let connections = videoOutput.connections as? [AVCaptureConnection] {
             for connection in connections {
                 if connection.isVideoMirroringSupported {
@@ -435,7 +437,7 @@ private extension Camera {
                 }
                 
                 if connection.isVideoStabilizationSupported {
-                    connection.preferredVideoStabilizationMode = .standard
+                    connection.preferredVideoStabilizationMode = stableMode
                 }
                 
                 print("isVideoStabilizationSupported: \(connection.isVideoStabilizationSupported), activeVideoStabilizationMode: \(connection.activeVideoStabilizationMode.rawValue)")
