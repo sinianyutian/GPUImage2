@@ -27,7 +27,7 @@ public class MovieInput: ImageSource {
     }
     
     let yuvConversionShader:ShaderProgram
-    let asset:AVAsset
+    public let asset:AVAsset
     let videoComposition:AVVideoComposition?
     var playAtActualSpeed:Bool
     
