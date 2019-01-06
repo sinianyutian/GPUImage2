@@ -7,14 +7,14 @@ var imageProcessingShareGroup:EAGLSharegroup? = nil
 var dispatchQueKeyValueCounter = 81
 
 public class OpenGLContext: SerialDispatch {
-    public lazy var framebufferCache:FramebufferCache = {
+    public private(set) lazy var framebufferCache:FramebufferCache = {
         return FramebufferCache(context:self)
     }()
     var shaderCache:[String:ShaderProgram] = [:]
     public let standardImageVBO:GLuint
     var textureVBOs:[Rotation:GLuint] = [:]
 
-    let context:EAGLContext
+    public let context:EAGLContext
     
     lazy var passthroughShader:ShaderProgram = {
         return crashOnShaderCompileFailure("OpenGLContext"){return try self.programForVertexShader(OneInputVertexShader, fragmentShader:PassthroughFragmentShader)}
