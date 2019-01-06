@@ -26,6 +26,7 @@ enum ShaderType {
 
 public class ShaderProgram {
     public var colorUniformsUseFourComponents = false
+    public static var disableAttributeCache: Bool = false
     let program:GLuint
     var vertexShader:GLuint! // At some point, the Swift compiler will be able to deal with the early throw and we can convert these to lets
     var fragmentShader:GLuint!
@@ -74,7 +75,7 @@ public class ShaderProgram {
     // MARK: Attributes and uniforms
     
     public func attributeIndex(_ attribute:String) -> GLuint? {
-        if let attributeAddress = attributeAddresses[attribute] {
+        if let attributeAddress = attributeAddresses[attribute], !ShaderProgram.disableAttributeCache {
             return attributeAddress
         } else {
             var attributeAddress:GLint = -1
@@ -86,7 +87,9 @@ public class ShaderProgram {
                 return nil
             } else {
                 glEnableVertexAttribArray(GLuint(attributeAddress))
-                attributeAddresses[attribute] = GLuint(attributeAddress)
+                if !ShaderProgram.disableAttributeCache {
+                    attributeAddresses[attribute] = GLuint(attributeAddress)
+                }
                 return GLuint(attributeAddress)
             }
         }
