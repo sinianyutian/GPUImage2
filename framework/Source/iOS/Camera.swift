@@ -101,6 +101,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public var microphone:AVCaptureDevice?
     public var audioInput:AVCaptureDeviceInput?
     public var audioOutput:AVCaptureAudioDataOutput?
+    public var dontDropFrames: Bool = false
 
     var supportsFullYUVRange:Bool = false
     let captureAsYUV:Bool
@@ -266,7 +267,9 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
             return
         }
 
-        guard (frameRenderingSemaphore.wait(timeout:DispatchTime.now()) == DispatchTimeoutResult.success) else { return }
+        let notFrameDrop = dontDropFrames
+        
+        guard notFrameDrop || (frameRenderingSemaphore.wait(timeout:DispatchTime.now()) == DispatchTimeoutResult.success) else { return }
     
         let startTime = CFAbsoluteTimeGetCurrent()
         
@@ -355,7 +358,9 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
                 self.framesSinceLastCheck += 1
             }
 
-            self.frameRenderingSemaphore.signal()
+            if !notFrameDrop {
+                self.frameRenderingSemaphore.signal()
+            }
         }
     }
 
