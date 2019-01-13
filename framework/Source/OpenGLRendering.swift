@@ -221,6 +221,54 @@ func generateFramebufferForTexture(_ texture:GLuint, width:GLint, height:GLint, 
     return (framebuffer, stencilBuffer)
 }
 
+enum CVPixelBufferCreationError: Error {
+    case unsupportPixelFormat
+    case createTextureFailed
+}
+
+func createTextureWithPixelBuffer(_ pixelBuffer: CVPixelBuffer) -> (glTexture: GLuint?, error: CVPixelBufferCreationError?) {
+    let width = CVPixelBufferGetWidth(pixelBuffer)
+    let height = CVPixelBufferGetHeight(pixelBuffer)
+    var cvOpenGLESTexture: CVOpenGLESTexture?
+    
+    let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
+    let glFormat: Int32
+    switch pixelFormat {
+    case kCVPixelFormatType_32RGBA:
+        glFormat = GL_RGBA
+    case kCVPixelFormatType_32BGRA:
+        glFormat = GL_BGRA
+    default:
+        return (nil, CVPixelBufferCreationError.unsupportPixelFormat)
+    }
+    
+    let ret = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
+                                                           sharedImageProcessingContext.coreVideoTextureCache,
+                                                           pixelBuffer,
+                                                           nil,
+                                                           GLenum(GL_TEXTURE_2D),
+                                                           GL_RGBA,
+                                                           GLsizei(width),
+                                                           GLsizei(height),
+                                                           GLenum(glFormat),
+                                                           GLenum(GL_UNSIGNED_BYTE),
+                                                           0,
+                                                           &cvOpenGLESTexture)
+    guard ret == kCVReturnSuccess, let cvTexture = cvOpenGLESTexture else {
+        return (nil, .createTextureFailed)
+    }
+    
+    let glTexture = CVOpenGLESTextureGetName(cvTexture)
+    glBindTexture(CVOpenGLESTextureGetTarget(cvTexture), glTexture)
+    glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR)
+    glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
+    glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE)
+    glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE)
+    glBindTexture(GLenum(GL_TEXTURE_2D), 0)
+    
+    return (glTexture, nil)
+}
+
 func attachStencilBuffer(width:GLint, height:GLint) throws -> GLuint {
     var stencilBuffer:GLuint = 0
     glGenRenderbuffers(1, &stencilBuffer);

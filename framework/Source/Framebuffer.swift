@@ -52,6 +52,7 @@ public class Framebuffer {
     let framebuffer:GLuint?
     let stencilBuffer:GLuint?
     public let size:GLSize
+    public let cvPixelBuffer:CVPixelBuffer?
     let internalFormat:Int32
     let format:Int32
     let type:Int32
@@ -61,7 +62,7 @@ public class Framebuffer {
     
     unowned var context:OpenGLContext
     
-    public init(context:OpenGLContext, orientation:ImageOrientation, size:GLSize, textureOnly:Bool = false, minFilter:Int32 = GL_LINEAR, magFilter:Int32 = GL_LINEAR, wrapS:Int32 = GL_CLAMP_TO_EDGE, wrapT:Int32 = GL_CLAMP_TO_EDGE, internalFormat:Int32 = GL_RGBA, format:Int32 = GL_BGRA, type:Int32 = GL_UNSIGNED_BYTE, stencil:Bool = false, overriddenTexture:GLuint? = nil) throws {
+    public init(context:OpenGLContext, orientation:ImageOrientation, size:GLSize, textureOnly:Bool = false, minFilter:Int32 = GL_LINEAR, magFilter:Int32 = GL_LINEAR, wrapS:Int32 = GL_CLAMP_TO_EDGE, wrapT:Int32 = GL_CLAMP_TO_EDGE, internalFormat:Int32 = GL_RGBA, format:Int32 = GL_BGRA, type:Int32 = GL_UNSIGNED_BYTE, stencil:Bool = false, overriddenTexture:GLuint? = nil, pixelBuffer:CVPixelBuffer? = nil) throws {
         self.context = context
         self.size = size
         self.orientation = orientation
@@ -69,14 +70,26 @@ public class Framebuffer {
         self.format = format
         self.type = type
         
-        self.hash = hashForFramebufferWithProperties(orientation:orientation, size:size, textureOnly:textureOnly, minFilter:minFilter, magFilter:magFilter, wrapS:wrapS, wrapT:wrapT, internalFormat:internalFormat, format:format, type:type, stencil:stencil)
+        self.hash = hashForFramebufferWithProperties(orientation:orientation, size:size, textureOnly:textureOnly, minFilter:minFilter, magFilter:magFilter, wrapS:wrapS, wrapT:wrapT, internalFormat:internalFormat, format:format, type:type, stencil:stencil, pixelBuffer:pixelBuffer != nil)
 
-        if let newTexture = overriddenTexture {
+        if let buffer = pixelBuffer {
+            textureOverride = false
+            let (glTexture, error) = createTextureWithPixelBuffer(buffer)
+            guard let texture = glTexture, error == nil else {
+                // Notice: it must has an error if any pixelBuffer and glTexture are both empty
+                assert(error != nil)
+                throw error!
+            }
+            self.texture = texture
+            cvPixelBuffer = pixelBuffer
+        } else if let newTexture = overriddenTexture {
             textureOverride = true
             texture = newTexture
+            cvPixelBuffer = nil
         } else {
             textureOverride = false
             texture = generateTexture(minFilter:minFilter, magFilter:magFilter, wrapS:wrapS, wrapT:wrapT)
+            cvPixelBuffer = nil
         }
         
         if (!textureOnly) {
@@ -190,7 +203,7 @@ public class Framebuffer {
     }
 }
 
-func hashForFramebufferWithProperties(orientation:ImageOrientation, size:GLSize, textureOnly:Bool = false, minFilter:Int32 = GL_LINEAR, magFilter:Int32 = GL_LINEAR, wrapS:Int32 = GL_CLAMP_TO_EDGE, wrapT:Int32 = GL_CLAMP_TO_EDGE, internalFormat:Int32 = GL_RGBA, format:Int32 = GL_BGRA, type:Int32 = GL_UNSIGNED_BYTE, stencil:Bool = false) -> Int64 {
+func hashForFramebufferWithProperties(orientation:ImageOrientation, size:GLSize, textureOnly:Bool = false, minFilter:Int32 = GL_LINEAR, magFilter:Int32 = GL_LINEAR, wrapS:Int32 = GL_CLAMP_TO_EDGE, wrapT:Int32 = GL_CLAMP_TO_EDGE, internalFormat:Int32 = GL_RGBA, format:Int32 = GL_BGRA, type:Int32 = GL_UNSIGNED_BYTE, stencil:Bool = false, pixelBuffer:Bool = false) -> Int64 {
     var result:Int64 = 1
     let prime:Int64 = 31
     let yesPrime:Int64 = 1231
@@ -204,6 +217,8 @@ func hashForFramebufferWithProperties(orientation:ImageOrientation, size:GLSize,
     result = prime * result + Int64(type)
     result = prime * result + (textureOnly ? yesPrime : noPrime)
     result = prime * result + (stencil ? yesPrime : noPrime)
+    result = prime * result + (pixelBuffer ? yesPrime : noPrime)
+    // NOTE: Be careful about Int64 value overflow. There are about 3 times left.
     return result
 }
 
