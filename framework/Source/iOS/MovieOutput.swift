@@ -123,6 +123,16 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         self.keepLastPixelBuffer = keepLastPixelBuffer
     }
     
+    public func preCreatedFramebuffer(orientation: ImageOrientation, size: GLSize, textureOnly: Bool, minFilter: Int32, magFilter: Int32, wrapS: Int32, wrapT: Int32, internalFormat: Int32, format: Int32, type: Int32, stencil: Bool) -> Framebuffer? {
+        // Create CVPixelBuffer
+        guard let pixelBufferPool = assetWriterPixelBufferInput.pixelBufferPool else { return nil }
+        var pixelBuffer: CVPixelBuffer?
+        let pixelBufferStatus = CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferPool, &pixelBuffer)
+        guard pixelBufferStatus == kCVReturnSuccess, let buffer = pixelBuffer else { return nil }
+        let framebuffer = sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation: orientation, size: size, textureOnly: textureOnly, minFilter: minFilter, magFilter: magFilter, wrapS: wrapS, wrapT: wrapT, internalFormat: internalFormat, format: format, type: type, stencil: stencil, pixelBuffer: buffer)
+        return framebuffer
+    }
+    
     public func startRecording(_ completionCallback:((_ started: Bool, _ error: Error?) -> Void)? = nil) {
         // Don't do this work on the movieProcessingContext queue so we don't block it.
         // If it does get blocked framebuffers will pile up from live video and after it is no longer blocked (this work has finished)
@@ -231,14 +241,24 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             if self.keepLastPixelBuffer {
                 self.pixelBuffer = nil
             }
-            let pixelBufferStatus = CVPixelBufferPoolCreatePixelBuffer(nil, self.assetWriterPixelBufferInput.pixelBufferPool!, &self.pixelBuffer)
-            guard ((self.pixelBuffer != nil) && (pixelBufferStatus == kCVReturnSuccess)) else {
-                print("WARNING: Unable to create pixel buffer, dropping frame")
-                return
+            
+            let usePreCreatedPixelBuffer = (framebuffer.cvPixelBuffer != nil)
+            
+            if usePreCreatedPixelBuffer {
+                self.pixelBuffer = framebuffer.cvPixelBuffer
+            } else {
+                let pixelBufferStatus = CVPixelBufferPoolCreatePixelBuffer(nil, self.assetWriterPixelBufferInput.pixelBufferPool!, &self.pixelBuffer)
+                guard ((self.pixelBuffer != nil) && (pixelBufferStatus == kCVReturnSuccess)) else {
+                    print("WARNING: Unable to create pixel buffer, dropping frame")
+                    return
+                }
             }
             
             do {
-                try self.renderIntoPixelBuffer(self.pixelBuffer!, framebuffer:framebuffer)
+                // No need to render again
+                if !usePreCreatedPixelBuffer {
+                    try self.renderIntoPixelBuffer(self.pixelBuffer!, framebuffer:framebuffer)
+                }
                 
                 self.synchronizedEncodingDebugPrint("Process frame output")
                 
@@ -256,7 +276,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 self.totalFramesAppended += 1
             }
             
-            CVPixelBufferUnlockBaseAddress(self.pixelBuffer!, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
+            if !usePreCreatedPixelBuffer {
+                CVPixelBufferUnlockBaseAddress(self.pixelBuffer!, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
+            }
+            
             if !self.keepLastPixelBuffer {
                 self.pixelBuffer = nil
             }

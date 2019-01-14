@@ -203,6 +203,31 @@ public class Framebuffer {
     }
 }
 
+public extension ImageSource {
+    /// Request framebuffer and return preCreate framebuffer if possible
+    func requestBuffer(orientation:ImageOrientation, size:GLSize, textureOnly:Bool = false, minFilter:Int32 = GL_LINEAR, magFilter:Int32 = GL_LINEAR, wrapS:Int32 = GL_CLAMP_TO_EDGE, wrapT:Int32 = GL_CLAMP_TO_EDGE, internalFormat:Int32 = GL_RGBA, format:Int32 = GL_BGRA, type:Int32 = GL_UNSIGNED_BYTE, stencil:Bool = false, overriddenTexture:GLuint? = nil, pixelBuffer:Bool = false) -> Framebuffer {
+        
+        var preCreatedBuffer: Framebuffer?
+        // Try get preCreatedBuffer
+        for (target, _) in targets {
+            // TODO: support multi targets
+            guard targets.count == 1 else { break }
+            if preCreatedBuffer == nil,
+                let preCreated = target.preCreatedFramebuffer(orientation: orientation, size: size, textureOnly: textureOnly, minFilter: minFilter, magFilter: magFilter, wrapS: wrapS, wrapT: wrapT, internalFormat: internalFormat, format: format, type: type, stencil: stencil) {
+                preCreatedBuffer = preCreated
+                break
+            }
+        }
+        
+        if let buffer = preCreatedBuffer {
+            return buffer
+        } else {
+            // Fallback to the normal framebuffer
+            return sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation: orientation, size: size, textureOnly: textureOnly, minFilter: minFilter, magFilter: magFilter, wrapS: wrapS, wrapT: wrapT, internalFormat: internalFormat, format: format, type: type, stencil: stencil)
+        }
+    }
+}
+
 func hashForFramebufferWithProperties(orientation:ImageOrientation, size:GLSize, textureOnly:Bool = false, minFilter:Int32 = GL_LINEAR, magFilter:Int32 = GL_LINEAR, wrapS:Int32 = GL_CLAMP_TO_EDGE, wrapT:Int32 = GL_CLAMP_TO_EDGE, internalFormat:Int32 = GL_RGBA, format:Int32 = GL_BGRA, type:Int32 = GL_UNSIGNED_BYTE, stencil:Bool = false, pixelBuffer:Bool = false) -> Int64 {
     var result:Int64 = 1
     let prime:Int64 = 31

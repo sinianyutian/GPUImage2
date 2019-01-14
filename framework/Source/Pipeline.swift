@@ -12,6 +12,16 @@ public protocol ImageConsumer:AnyObject {
     var sources:SourceContainer { get }
     
     func newFramebufferAvailable(_ framebuffer:Framebuffer, fromSourceIndex:UInt)
+    
+    // If image consumer use passthrough shader, it can return a preCreated framebuffer to reduce unnecessary drawing time
+    func preCreatedFramebuffer(orientation: ImageOrientation, size: GLSize, textureOnly: Bool, minFilter: Int32, magFilter: Int32, wrapS: Int32, wrapT: Int32, internalFormat: Int32, format: Int32, type: Int32, stencil: Bool) -> Framebuffer?
+}
+
+public extension ImageConsumer {
+    // Default implementation will not use preCreated buffer
+    func preCreatedFramebuffer(orientation: ImageOrientation, size: GLSize, textureOnly: Bool, minFilter: Int32, magFilter: Int32, wrapS: Int32, wrapT: Int32, internalFormat: Int32, format: Int32, type: Int32, stencil: Bool) -> Framebuffer? {
+        return nil
+    }
 }
 
 public protocol ImageProcessingOperation: ImageConsumer, ImageSource {
@@ -111,7 +121,7 @@ class WeakImageConsumer {
 public class TargetContainer:Sequence {
     private var targets = [WeakImageConsumer]()
     
-    private var count:Int { get { return targets.count } }
+    public var count:Int { get { return targets.count } }
 
 #if !os(Linux)
     let dispatchQueue = DispatchQueue(label:"com.sunsetlakesoftware.GPUImage.targetContainerQueue", attributes: [])
@@ -253,5 +263,19 @@ public class ImageRelay: ImageProcessingOperation {
         for (target, index) in targets {
             target.newFramebufferAvailable(framebuffer, fromSourceIndex:index)
         }
+    }
+    
+    public func preCreatedFramebuffer(orientation: ImageOrientation, size: GLSize, textureOnly: Bool, minFilter: Int32, magFilter: Int32, wrapS: Int32, wrapT: Int32, internalFormat: Int32, format: Int32, type: Int32, stencil: Bool) -> Framebuffer? {
+        // Relay preCreatedFramebuffer to the next target
+        // TODO: support multi target for preCreatedBuffer
+        guard targets.count == 1 else { return nil }
+        var preCreatedBuffer: Framebuffer?
+        for (target, _) in targets {
+            if preCreatedBuffer == nil, let preCreated = target.preCreatedFramebuffer(orientation: orientation, size: size, textureOnly: textureOnly, minFilter: minFilter, magFilter: magFilter, wrapS: wrapS, wrapT: wrapT, internalFormat: internalFormat, format: format, type: type, stencil: stencil) {
+                preCreatedBuffer = preCreated
+                break
+            }
+        }
+        return preCreatedBuffer
     }
 }
