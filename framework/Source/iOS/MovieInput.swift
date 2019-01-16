@@ -2,6 +2,7 @@ import AVFoundation
 
 public protocol MovieInputDelegate: class {
     func didFinishMovie()
+    func didReadVideoFrame(_ sampleBuffer: CMSampleBuffer)
 }
 
 enum MovieInputError: Error {
@@ -299,6 +300,7 @@ public class MovieInput: ImageSource {
             return
         }
         
+        delegate?.didReadVideoFrame(sampleBuffer)
         
         self.synchronizedEncodingDebugPrint("Process frame input")
         
