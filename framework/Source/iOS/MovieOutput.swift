@@ -307,6 +307,73 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
     }
     
+    // MARK: Append buffer directly from CMSampleBuffer
+    public func processVideoBuffer(_ sampleBuffer: CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool) {
+        let work = {
+            defer {
+                if(shouldInvalidateSampleWhenDone) {
+                    CMSampleBufferInvalidate(sampleBuffer)
+                }
+            }
+            
+            guard self.isRecording,
+                self.assetWriter.status == .writing,
+                !self.videoEncodingIsFinished else {
+                    self.synchronizedEncodingDebugPrint("Guard fell through, dropping frame")
+                    return
+            }
+            
+            let frameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            
+            // If two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case.
+            guard (frameTime != self.previousFrameTime) else { return }
+            
+            if (self.previousFrameTime == nil) {
+                // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
+                self.assetWriter.startSession(atSourceTime: frameTime)
+            }
+            
+            self.previousFrameTime = frameTime
+            
+            guard (self.assetWriterVideoInput.isReadyForMoreMediaData || !self.encodingLiveVideo) else {
+                print("Had to drop a frame at time \(frameTime)")
+                return
+            }
+            
+            guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+                print("WARNING: Cannot get pixel buffer from sampleBuffer:\(sampleBuffer)")
+                return
+            }
+            
+            while(!self.assetWriterVideoInput.isReadyForMoreMediaData && !self.encodingLiveVideo && !self.videoEncodingIsFinished) {
+                self.synchronizedEncodingDebugPrint("Video waiting...")
+                // Better to poll isReadyForMoreMediaData often since when it does become true
+                // we don't want to risk letting framebuffers pile up in between poll intervals.
+                usleep(100000) // 0.1 seconds
+            }
+            
+            do {
+                self.synchronizedEncodingDebugPrint("Process frame output")
+                
+                try NSObject.catchException {
+                    if (!self.assetWriterPixelBufferInput.append(buffer, withPresentationTime:frameTime)) {
+                        print("WARNING: Trouble appending pixel buffer at time: \(frameTime) \(String(describing: self.assetWriter.error))")
+                    }
+                }
+            }
+            catch {
+                print("WARNING: Trouble appending pixel buffer at time: \(frameTime) \(error)")
+            }
+        }
+        
+        if(self.encodingLiveVideo) {
+            movieProcessingContext.runOperationAsynchronously(work)
+        }
+        else {
+            work()
+        }
+    }
+    
     // MARK: -
     // MARK: Audio support
     
