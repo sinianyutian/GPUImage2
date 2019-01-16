@@ -300,7 +300,11 @@ public class MovieInput: ImageSource {
             return
         }
         
-        delegate?.didReadVideoFrame(sampleBuffer)
+        if delegate != nil {
+            sharedImageProcessingContext.runOperationSynchronously{ [weak self] in
+                self?.delegate?.didReadVideoFrame(sampleBuffer)
+            }
+        }
         
         self.synchronizedEncodingDebugPrint("Process frame input")
         
