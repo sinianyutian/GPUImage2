@@ -2,6 +2,16 @@ import Foundation
 import AVFoundation
 
 public protocol CameraDelegate: class {
+    /// Output original unprocessed sample buffer on AVCaptureDataOutput queue WITHOUT frame drops.
+    ///
+    /// - Parameters:
+    ///   - sampleBuffer: original sample buffer
+    /// It should be very lightweight and delay less than 1/FPS secons.
+    func didCaptureBufferOnOutputQueue(_ sampleBuffer: CMSampleBuffer)
+
+    /// Output original unprocessed sample buffer on sharedImageProcessing queue WITH frame drops if needed.
+    ///
+    /// - Parameter sampleBuffer: original sample buffer
     func didCaptureBuffer(_ sampleBuffer: CMSampleBuffer)
 }
 public enum PhysicalCameraLocation {
@@ -268,6 +278,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
             self.processAudioSampleBuffer(sampleBuffer)
             return
         }
+        
+        delegate?.didCaptureBufferOnOutputQueue(sampleBuffer)
 
         let notFrameDrop = dontDropFrames
         
