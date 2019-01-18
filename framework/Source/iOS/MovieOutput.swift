@@ -192,6 +192,25 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
     }
     
+    public func cancelRecording(_ completionCallback:(() -> Void)? = nil) {
+        movieProcessingContext.runOperationAsynchronously{
+            guard self.isRecording,
+                self.assetWriter.status == .writing else {
+                    completionCallback?()
+                    return
+            }
+            
+            self.audioEncodingIsFinished = false
+            self.videoEncodingIsFinished = false
+            
+            self.isRecording = false
+            
+            self.assetWriter.cancelWriting()
+            completionCallback?()
+            self.synchronizedEncodingDebugPrint("MovieOutput cancel writing")
+        }
+    }
+    
     public func newFramebufferAvailable(_ framebuffer:Framebuffer, fromSourceIndex:UInt) {
         glFinish();
         
