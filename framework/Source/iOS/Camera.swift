@@ -71,8 +71,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
                     inputCamera = device
                     captureSession.addInput(newVideoInput)
                     videoInput = newVideoInput
-                    let stableMode = (location == .backFacing ? backCaemraStableMode : frontCameraStableMode)
-                    Camera.updateVideoOutput(location: location, videoOutput: videoOutput, stableMode:stableMode)
+                    configureStabilization()
                 } else {
                     print("Can't add video input")
                     captureSession.addInput(videoInput)
@@ -112,8 +111,20 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public var audioInput:AVCaptureDeviceInput?
     public var audioOutput:AVCaptureAudioDataOutput?
     public var dontDropFrames: Bool = false
-    public var backCaemraStableMode: AVCaptureVideoStabilizationMode = .standard
-    public var frontCameraStableMode: AVCaptureVideoStabilizationMode = .standard
+    public var backCaemraStableMode: AVCaptureVideoStabilizationMode = .standard {
+        didSet {
+            if location == .backFacing {
+                configureStabilization()
+            }
+        }
+    }
+    public var frontCameraStableMode: AVCaptureVideoStabilizationMode = .standard {
+        didSet {
+            if location != .backFacing {
+                configureStabilization()
+            }
+        }
+    }
 
     var supportsFullYUVRange:Bool = false
     let captureAsYUV:Bool
@@ -239,6 +250,11 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         
         print("isStillImageStabilizationSupported: \(photoOutput.isStillImageStabilizationSupported), isStillImageStabilizationScene: \(photoOutput.isStillImageStabilizationScene)")
         photoOutput.capturePhoto(with: photoSettings, delegate: delegate)
+    }
+    
+    func configureStabilization() {
+        let stableMode = (location == .backFacing ? backCaemraStableMode : frontCameraStableMode)
+        Camera.updateVideoOutput(location: location, videoOutput: videoOutput, stableMode:stableMode)
     }
     
     deinit {
