@@ -48,6 +48,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
     }
     public private(set) var pixelBuffer:CVPixelBuffer? = nil
+    public var dropFirstFrames: Int = 0
     let keepLastPixelBuffer: Bool
     var renderFramebuffer:Framebuffer!
     
@@ -215,6 +216,13 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         glFinish();
         
         let work = {
+            // Discard first n frames
+            if self.dropFirstFrames > 0 {
+                self.dropFirstFrames -= 1
+                self.synchronizedEncodingDebugPrint("Drop one frame. Left dropFirstFrames:\(self.dropFirstFrames)")
+                return
+            }
+            
             guard self.isRecording,
                 self.assetWriter.status == .writing,
                 !self.videoEncodingIsFinished else {
