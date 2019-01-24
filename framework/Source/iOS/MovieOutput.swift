@@ -47,6 +47,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             assetWriterAudioInput?.expectsMediaDataInRealTime = encodingLiveVideo
         }
     }
+    var pendingAudioBuffers = [CMSampleBuffer]()
     public private(set) var pixelBuffer:CVPixelBuffer? = nil
     public var dropFirstFrames: Int = 0
     let keepLastPixelBuffer: Bool
@@ -184,6 +185,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 // the session's samples (that is, no samples will be edited out at the end)."
                 self.assetWriter.endSession(atSourceTime: lastFrame)
             }
+            self.pendingAudioBuffers.removeAll()
             
             self.assetWriter.finishWriting {
                 completionCallback?()
@@ -205,6 +207,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             self.videoEncodingIsFinished = false
             
             self.isRecording = false
+            self.pendingAudioBuffers.removeAll()
             
             self.assetWriter.cancelWriting()
             completionCallback?()
@@ -267,7 +270,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             do {
                 try self.renderIntoPixelBuffer(self.pixelBuffer!, framebuffer:framebuffer)
                 
-                self.synchronizedEncodingDebugPrint("Process frame output")
+                self.synchronizedEncodingDebugPrint("Process frame output. Time:\(CMTimeGetSeconds(frameTime))")
                 
                 try NSObject.catchException {
                     if (!self.assetWriterPixelBufferInput.append(self.pixelBuffer!, withPresentationTime:frameTime)) {
@@ -413,8 +416,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     public func processAudioBuffer(_ sampleBuffer:CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool) {
         let work = {
+            var shouldInvalidate = shouldInvalidateSampleWhenDone
             defer {
-                if(shouldInvalidateSampleWhenDone) {
+                if(shouldInvalidate) {
                     CMSampleBufferInvalidate(sampleBuffer)
                 }
             }
@@ -439,12 +443,22 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 usleep(100000)
             }
             
-            self.synchronizedEncodingDebugPrint("Process audio sample output")
+            self.pendingAudioBuffers.append(sampleBuffer)
+            guard self.previousFrameTime != nil else {
+                self.synchronizedEncodingDebugPrint("Add audio sample to pending queue but first video frame is not ready yet. Time:\(CMTimeGetSeconds(currentSampleTime))")
+                shouldInvalidate = false
+                return
+            }
+            
+            self.synchronizedEncodingDebugPrint("Process audio sample output. Time:\(CMTimeGetSeconds(currentSampleTime))")
             
             do {
                 try NSObject.catchException {
-                    if (!assetWriterAudioInput.append(sampleBuffer)) {
-                        print("WARNING: Trouble appending audio sample buffer: \(String(describing: self.assetWriter.error))")
+                    while self.pendingAudioBuffers.count > 0 {
+                        let audioBuffer = self.pendingAudioBuffers.removeFirst()
+                        if (!assetWriterAudioInput.append(audioBuffer)) {
+                            print("WARNING: Trouble appending audio sample buffer: \(String(describing: self.assetWriter.error))")
+                        }
                     }
                 }
             }
@@ -457,6 +471,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             movieProcessingContext.runOperationAsynchronously(work)
         }
         else {
+            // Process pending audio buffers at first
+            while pendingAudioBuffers.count > 0 {
+                let audioBuffer = pendingAudioBuffers.removeFirst()
+                processAudioBuffer(audioBuffer, shouldInvalidateSampleWhenDone: shouldInvalidateSampleWhenDone)
+            }
             work()
         }
     }

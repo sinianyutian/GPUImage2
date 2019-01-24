@@ -306,10 +306,9 @@ public class MovieInput: ImageSource {
             }
         }
         
-        self.synchronizedEncodingDebugPrint("Process frame input")
-        
         var currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
         var duration = self.asset.duration // Only used for the progress block so its acuracy is not critical
+        self.synchronizedEncodingDebugPrint("Process frame input. Time:\(CMTimeGetSeconds(currentSampleTime))")
         
         self.currentTime = currentSampleTime
         
@@ -363,7 +362,7 @@ public class MovieInput: ImageSource {
             return
         }
         
-        self.synchronizedEncodingDebugPrint("Process audio sample input")
+        self.synchronizedEncodingDebugPrint("Process audio sample input. Time:\(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)))")
         
         self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: true)
     }
