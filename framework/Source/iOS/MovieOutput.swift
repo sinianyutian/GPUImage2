@@ -203,8 +203,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                     return
             }
             
-            self.audioEncodingIsFinished = false
-            self.videoEncodingIsFinished = false
+            self.audioEncodingIsFinished = true
+            self.videoEncodingIsFinished = true
             
             self.isRecording = false
             self.pendingAudioBuffers.removeAll()
