@@ -42,6 +42,7 @@ public class MovieInput: ImageSource {
     private(set) public var currentTime:CMTime?
     
     public var loop:Bool
+    public var playrate:Double
     
     // Called after the video finishes. Not called when cancel() or pause() is called.
     public var completion: ((Error?) -> Void)?
@@ -78,21 +79,22 @@ public class MovieInput: ImageSource {
     public var framebufferUserInfo:[AnyHashable:Any]?
     
     // TODO: Someone will have to add back in the AVPlayerItem logic, because I don't know how that works
-    public init(asset:AVAsset, videoComposition: AVVideoComposition?, playAtActualSpeed:Bool = false, loop:Bool = false, audioSettings:[String:Any]? = nil) throws {
+    public init(asset:AVAsset, videoComposition: AVVideoComposition?, playAtActualSpeed:Bool = false, loop:Bool = false, playrate:Double = 1.0, audioSettings:[String:Any]? = nil) throws {
         debugPrint("movie input init \(asset)")
 
         self.asset = asset
         self.videoComposition = videoComposition
         self.playAtActualSpeed = playAtActualSpeed
         self.loop = loop
+        self.playrate = playrate
         self.yuvConversionShader = crashOnShaderCompileFailure("MovieInput"){try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(2), fragmentShader:YUVConversionFullRangeFragmentShader)}
         self.audioSettings = audioSettings
     }
 
-    public convenience init(url:URL, playAtActualSpeed:Bool = false, loop:Bool = false, audioSettings:[String:Any]? = nil) throws {
+    public convenience init(url:URL, playAtActualSpeed:Bool = false, loop:Bool = false, playrate: Double = 1.0, audioSettings:[String:Any]? = nil) throws {
         let inputOptions = [AVURLAssetPreferPreciseDurationAndTimingKey:NSNumber(value:true)]
         let inputAsset = AVURLAsset(url:url, options:inputOptions)
-        try self.init(asset:inputAsset, videoComposition: nil, playAtActualSpeed:playAtActualSpeed, loop:loop, audioSettings:audioSettings)
+        try self.init(asset:inputAsset, videoComposition: nil, playAtActualSpeed:playAtActualSpeed, loop:loop, playrate:playrate, audioSettings:audioSettings)
     }
     
     deinit {
@@ -308,7 +310,7 @@ public class MovieInput: ImageSource {
         
         var currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
         var duration = self.asset.duration // Only used for the progress block so its acuracy is not critical
-        self.synchronizedEncodingDebugPrint("Process frame input. Time:\(CMTimeGetSeconds(currentSampleTime))")
+        self.synchronizedEncodingDebugPrint("Process video frame input. Time:\(CMTimeGetSeconds(currentSampleTime))")
         
         self.currentTime = currentSampleTime
         
@@ -319,7 +321,7 @@ public class MovieInput: ImageSource {
         }
         
         if (self.playAtActualSpeed) {
-            let currentSampleTimeNanoseconds = Int64(currentSampleTime.seconds * 1_000_000_000)
+            let currentSampleTimeNanoseconds = Int64(currentSampleTime.seconds * 1_000_000_000 / playrate)
             let currentActualTime = DispatchTime.now()
             
             if(self.actualStartTime == nil) { self.actualStartTime = currentActualTime }
