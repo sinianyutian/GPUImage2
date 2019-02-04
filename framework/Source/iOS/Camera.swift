@@ -36,7 +36,7 @@ public enum PhysicalCameraLocation {
         }
     }
     
-    func device() -> AVCaptureDevice? {
+    public func device() -> AVCaptureDevice? {
         let devices = AVCaptureDevice.devices(withMediaType:AVMediaTypeVideo)
         for case let device as AVCaptureDevice in devices! {
             if (device.position == self.captureDevicePosition()) {
