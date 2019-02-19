@@ -111,7 +111,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public var audioInput:AVCaptureDeviceInput?
     public var audioOutput:AVCaptureAudioDataOutput?
     public var dontDropFrames: Bool = false
-    public var backCaemraStableMode: AVCaptureVideoStabilizationMode = .standard {
+    public var backCameraStableMode: AVCaptureVideoStabilizationMode = .standard {
         didSet {
             if location == .backFacing {
                 configureStabilization()
@@ -253,7 +253,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     }
     
     func configureStabilization() {
-        let stableMode = (location == .backFacing ? backCaemraStableMode : frontCameraStableMode)
+        let stableMode = (location == .backFacing ? backCameraStableMode : frontCameraStableMode)
         Camera.updateVideoOutput(location: location, videoOutput: videoOutput, stableMode:stableMode)
     }
     
