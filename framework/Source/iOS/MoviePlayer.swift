@@ -65,7 +65,7 @@ public class MoviePlayer: ImageSource {
     var observations = [NSKeyValueObservation]()
     
     public init(asset: AVAsset, loop: Bool = false) throws {
-        print("movie player init \(asset)")
+        debugPrint("movie player init \(asset)")
         self.asset = asset
         self.loop = loop
         self.yuvConversionShader = crashOnShaderCompileFailure("MoviePlayer") {
@@ -201,12 +201,12 @@ private extension MoviePlayer {
     }
     
     func playerRateDidChange() {
-        print("rate change to:\(player.rate) asset:\(asset) status:\(player.status.rawValue)")
+        debugPrint("rate change to:\(player.rate) asset:\(asset) status:\(player.status.rawValue)")
         resumeIfNeeded()
     }
     
     func playerStatusDidChange() {
-        print("status change to:\(player.status.rawValue) asset:\(asset)")
+        debugPrint("status change to:\(player.status.rawValue) asset:\(asset)")
         resumeIfNeeded()
     }
     
