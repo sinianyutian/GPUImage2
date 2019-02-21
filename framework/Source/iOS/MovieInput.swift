@@ -34,8 +34,12 @@ public class MovieInput: ImageSource {
     
     // Time in the video where it should start.
     var requestedStartTime:CMTime?
+    // Time in the video where it should end.
+    var requestedDuration:CMTime?
     // Time in the video where it started.
     var startTime:CMTime?
+    // Duration of the video from startTime.
+    var durationFromStart:CMTime?
     // Time according to device clock when the video started.
     var actualStartTime:DispatchTime?
     // Last sample time that played.
@@ -110,8 +114,9 @@ public class MovieInput: ImageSource {
     // MARK: -
     // MARK: Playback control
     
-    public func start(atTime: CMTime) {
+    public func start(atTime: CMTime, duration: CMTime? = nil) {
         self.requestedStartTime = atTime
+        requestedDuration = duration
         self.start()
     }
     
@@ -170,10 +175,16 @@ public class MovieInput: ImageSource {
             }
             
             self.startTime = self.requestedStartTime
+            self.durationFromStart = self.requestedDuration
             if let requestedStartTime = self.requestedStartTime {
-                assetReader.timeRange = CMTimeRange(start: requestedStartTime, duration: kCMTimePositiveInfinity)
+                if let requestedDuration = self.requestedDuration, requestedDuration.seconds > 0, CMTimeAdd(requestedStartTime, requestedDuration) <= asset.duration {
+                    assetReader.timeRange = CMTimeRange(start: requestedStartTime, duration: requestedDuration)
+                } else {
+                    assetReader.timeRange = CMTimeRange(start: requestedStartTime, duration: kCMTimePositiveInfinity)
+                }
             }
             self.requestedStartTime = nil
+            self.requestedDuration = nil
             self.currentTime = nil
             self.actualStartTime = nil
             
@@ -317,7 +328,11 @@ public class MovieInput: ImageSource {
         if let startTime = self.startTime {
             // Make sure our samples start at kCMTimeZero if the video was started midway.
             currentSampleTime = CMTimeSubtract(currentSampleTime, startTime)
-            duration = CMTimeSubtract(duration, startTime)
+            if let durationFromStart = self.durationFromStart, durationFromStart.seconds > 0, CMTimeAdd(startTime, durationFromStart) <= duration {
+                duration = durationFromStart
+            } else {
+                duration = CMTimeSubtract(duration, startTime)
+            }
         }
         
         if (self.playAtActualSpeed) {
