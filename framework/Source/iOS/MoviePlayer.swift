@@ -92,7 +92,7 @@ public class MoviePlayer: ImageSource {
     
     deinit {
         debugPrint("movie player deinit \(asset)")
-        pause()
+        stop()
         movieFramebuffer?.unlock()
         observations.forEach { $0.invalidate() }
         NotificationCenter.default.removeObserver(self)
@@ -104,11 +104,10 @@ public class MoviePlayer: ImageSource {
     public func start() {
         isPlaying = true
         debugPrint("movie player start \(asset)")
-        if displayLink != nil {
-            displayLink?.remove(from: RunLoop.main, forMode: .commonModes)
+        if displayLink == nil {
+            displayLink = CADisplayLink(target: self, selector: #selector(displayLinkCallback))
+            displayLink?.add(to: RunLoop.main, forMode: .commonModes)
         }
-        displayLink = CADisplayLink(target: self, selector: #selector(displayLinkCallback))
-        displayLink?.add(to: RunLoop.main, forMode: .commonModes)
         timeObserversQueue.removeAll()
         if let endTime = endTime {
             let endTimeObserver = MoviePlayerTimeObserver(targetTime: endTime) { [weak self] _ in
@@ -130,10 +129,20 @@ public class MoviePlayer: ImageSource {
         seekToTime(startTime ?? 0, shouldPlayAfterSeeking: true)
     }
     
+    public func resume() {
+        isPlaying = true
+        player.rate = playrate
+    }
+    
     public func pause() {
         isPlaying = false
         debugPrint("movie player pause \(asset)")
         player.pause()
+    }
+    
+    public func stop() {
+        pause()
+        debugPrint("movie player stop \(asset)")
         timeObserversQueue.removeAll()
         displayLink?.remove(from: RunLoop.current, forMode: .commonModes)
         displayLink?.invalidate()
@@ -141,10 +150,11 @@ public class MoviePlayer: ImageSource {
     }
     
     public func seekToTime(_ time: TimeInterval, shouldPlayAfterSeeking: Bool) {
-        player.seek(to: CMTime(seconds: time, preferredTimescale: 600)) { [weak self] success in
+        player.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: kCMTimeZero, toleranceAfter: kCMTimeZero) { [weak self] success in
             print("movie player did seek to time:\(time) success:\(success)")
             guard let self = self else { return }
             if shouldPlayAfterSeeking {
+                self.isPlaying = true
                 self.player.rate = self.playrate
             }
         }
