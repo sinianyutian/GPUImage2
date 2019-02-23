@@ -32,14 +32,14 @@ public class MovieInput: ImageSource {
     let videoComposition:AVVideoComposition?
     var playAtActualSpeed:Bool
     
-    // Time in the video where it should start.
+    // Time in the video where it should start. It will be reset when looping.
     var requestedStartTime:CMTime?
-    // Time in the video where it should end.
-    var requestedDuration:CMTime?
+    // Time in the video where it should start for trimmed start.
+    var trimmedStartTime:CMTime?
     // Time in the video where it started.
     var startTime:CMTime?
-    // Duration of the video from startTime.
-    var durationFromStart:CMTime?
+    // Duration of the video from startTime for trimming.
+    var trimmedDuration:CMTime?
     // Time according to device clock when the video started.
     var actualStartTime:DispatchTime?
     // Last sample time that played.
@@ -114,9 +114,14 @@ public class MovieInput: ImageSource {
     // MARK: -
     // MARK: Playback control
     
-    public func start(atTime: CMTime, duration: CMTime? = nil) {
-        self.requestedStartTime = atTime
-        requestedDuration = duration
+    public func start(atTime: CMTime, duration: CMTime? = nil, isTrimming: Bool = false) {
+        if !isTrimming {
+            requestedStartTime = atTime
+        } else {
+            trimmedStartTime = atTime
+            trimmedDuration = duration
+        }
+        
         self.start()
     }
     
@@ -175,16 +180,14 @@ public class MovieInput: ImageSource {
             }
             
             self.startTime = self.requestedStartTime
-            self.durationFromStart = self.requestedDuration
-            if let requestedStartTime = self.requestedStartTime {
-                if let requestedDuration = self.requestedDuration, requestedDuration.seconds > 0, CMTimeAdd(requestedStartTime, requestedDuration) <= asset.duration {
-                    assetReader.timeRange = CMTimeRange(start: requestedStartTime, duration: requestedDuration)
+            if let startTime = self.requestedStartTime ?? self.trimmedStartTime {
+                if let trimmedDuration = self.trimmedDuration, trimmedDuration.seconds > 0, CMTimeAdd(startTime, trimmedDuration) <= asset.duration {
+                    assetReader.timeRange = CMTimeRange(start: startTime, duration: trimmedDuration)
                 } else {
-                    assetReader.timeRange = CMTimeRange(start: requestedStartTime, duration: kCMTimePositiveInfinity)
+                    assetReader.timeRange = CMTimeRange(start: startTime, duration: kCMTimePositiveInfinity)
                 }
             }
             self.requestedStartTime = nil
-            self.requestedDuration = nil
             self.currentTime = nil
             self.actualStartTime = nil
             
@@ -328,8 +331,8 @@ public class MovieInput: ImageSource {
         if let startTime = self.startTime {
             // Make sure our samples start at kCMTimeZero if the video was started midway.
             currentSampleTime = CMTimeSubtract(currentSampleTime, startTime)
-            if let durationFromStart = self.durationFromStart, durationFromStart.seconds > 0, CMTimeAdd(startTime, durationFromStart) <= duration {
-                duration = durationFromStart
+            if let trimmedDuration = self.trimmedDuration, startTime.seconds > 0, CMTimeAdd(startTime, trimmedDuration) <= duration {
+                duration = trimmedDuration
             } else {
                 duration = CMTimeSubtract(duration, startTime)
             }
