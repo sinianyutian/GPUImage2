@@ -104,28 +104,8 @@ public class MoviePlayer: ImageSource {
     public func start() {
         isPlaying = true
         debugPrint("movie player start \(asset)")
-        if displayLink == nil {
-            displayLink = CADisplayLink(target: self, selector: #selector(displayLinkCallback))
-            displayLink?.add(to: RunLoop.main, forMode: .commonModes)
-        }
-        timeObserversQueue.removeAll()
-        if let endTime = endTime {
-            let endTimeObserver = MoviePlayerTimeObserver(targetTime: endTime) { [weak self] _ in
-                if self?.loop == true {
-                    self?.pause()
-                    self?.start()
-                } else {
-                    self?.pause()
-                }
-            }
-            timeObserversQueue.append(endTimeObserver)
-        }
-        for observer in totalTimeObservers {
-            guard observer.targetTime >= startTime ?? 0 else {
-                break
-            }
-            timeObserversQueue.append(observer)
-        }
+        _setupDisplayLinkIfNeeded()
+        _resetTimeObservers()
         seekToTime(startTime ?? 0, shouldPlayAfterSeeking: true)
     }
     
@@ -150,13 +130,23 @@ public class MoviePlayer: ImageSource {
     }
     
     public func seekToTime(_ time: TimeInterval, shouldPlayAfterSeeking: Bool) {
-        player.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: kCMTimeZero, toleranceAfter: kCMTimeZero) { [weak self] success in
+        let seekingCompletion = { [weak self] (success: Bool) in
             print("movie player did seek to time:\(time) success:\(success)")
             guard let self = self else { return }
             if shouldPlayAfterSeeking {
+                self._resetTimeObservers()
                 self.isPlaying = true
                 self.player.rate = self.playrate
             }
+        }
+        
+        let targetTime = CMTime(seconds: time, preferredTimescale: 600)
+        if shouldPlayAfterSeeking {
+            // 0.1s has 3 frames tolerance for 30 FPS video, it should be enough if there is no sticky video
+            let toleranceTime = CMTime(seconds: 0.1, preferredTimescale: 600)
+            player.seek(to: targetTime, toleranceBefore: toleranceTime, toleranceAfter: kCMTimeZero, completionHandler: seekingCompletion)
+        } else {
+            player.seek(to: targetTime, toleranceBefore: kCMTimeZero, toleranceAfter: kCMTimeZero, completionHandler: seekingCompletion)
         }
     }
     
@@ -192,11 +182,11 @@ public class MoviePlayer: ImageSource {
 }
 
 private extension MoviePlayer {
-    // MARK: -
-    // MARK: Thread configuration
-    
-    func nanosToAbs(_ nanos: UInt64) -> UInt64 {
-        return nanos * UInt64(timebaseInfo.denom) / UInt64(timebaseInfo.numer)
+    func _setupDisplayLinkIfNeeded() {
+        if displayLink == nil {
+            displayLink = CADisplayLink(target: self, selector: #selector(displayLinkCallback))
+            displayLink?.add(to: RunLoop.main, forMode: .commonModes)
+        }
     }
     
     func _setupObservers() {
@@ -208,6 +198,27 @@ private extension MoviePlayer {
         })
         NotificationCenter.default.addObserver(self, selector: #selector(playerDidPlayToEnd), name: .AVPlayerItemDidPlayToEndTime, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(playerStalled), name: .AVPlayerItemPlaybackStalled, object: nil)
+    }
+    
+    func _resetTimeObservers() {
+        timeObserversQueue.removeAll()
+        if let endTime = endTime {
+            let endTimeObserver = MoviePlayerTimeObserver(targetTime: endTime) { [weak self] _ in
+                if self?.loop == true && self?.isPlaying == true {
+                    self?.pause()
+                    self?.start()
+                } else {
+                    self?.pause()
+                }
+            }
+            timeObserversQueue.append(endTimeObserver)
+        }
+        for observer in totalTimeObservers {
+            guard observer.targetTime >= startTime ?? 0 else {
+                break
+            }
+            timeObserversQueue.append(observer)
+        }
     }
     
     func playerRateDidChange() {
@@ -228,7 +239,7 @@ private extension MoviePlayer {
     // MARK: -
     // MARK: Internal processing functions
     
-    func process(movieFrame: CVPixelBuffer, with sampleTime: CMTime) {
+    func _process(movieFrame: CVPixelBuffer, with sampleTime: CMTime) {
         delegate?.moviePlayerDidReadPixelBuffer(movieFrame, time: CMTimeGetSeconds(sampleTime))
         
         let bufferHeight = CVPixelBufferGetHeight(movieFrame)
@@ -331,7 +342,7 @@ private extension MoviePlayer {
                     return
                 }
                 self._notifyTimeObserver(with: currentTime)
-                self.process(movieFrame: pixelBuffer, with: currentTime)
+                self._process(movieFrame: pixelBuffer, with: currentTime)
             }
         }
     }
