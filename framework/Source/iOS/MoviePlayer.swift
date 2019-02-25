@@ -124,7 +124,6 @@ public class MoviePlayer: ImageSource {
         pause()
         debugPrint("movie player stop \(asset)")
         timeObserversQueue.removeAll()
-        displayLink?.remove(from: RunLoop.current, forMode: .commonModes)
         displayLink?.invalidate()
         displayLink = nil
     }
@@ -334,7 +333,11 @@ private extension MoviePlayer {
     }
     
     @objc func displayLinkCallback(displayLink: CADisplayLink) {
-        sharedImageProcessingContext.runOperationAsynchronously {
+        sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
+            guard let self = self else {
+                displayLink.invalidate()
+                return
+            }
             let currentTime = self.player.currentTime()
             if self.videoOutput.hasNewPixelBuffer(forItemTime: currentTime) {
                 guard let pixelBuffer = self.videoOutput.copyPixelBuffer(forItemTime: currentTime, itemTimeForDisplay: nil) else {
