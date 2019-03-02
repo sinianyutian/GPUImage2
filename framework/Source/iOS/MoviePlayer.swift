@@ -64,6 +64,15 @@ public class MoviePlayer: ImageSource {
     var framebufferUserInfo: [AnyHashable:Any]?
     var observations = [NSKeyValueObservation]()
     
+    struct SeekingInfo {
+        let time: CMTime
+        let toleranceBefore: CMTime
+        let toleranceAfter: CMTime
+        let shouldPlayAfterSeeking: Bool
+    }
+    var nextSeeking: SeekingInfo?
+    var isSeeking: Bool = false
+    
     public init(asset: AVAsset, loop: Bool = false) throws {
         debugPrint("movie player init \(asset)")
         self.asset = asset
@@ -116,6 +125,7 @@ public class MoviePlayer: ImageSource {
     
     public func pause() {
         isPlaying = false
+        guard player.rate != 0 else { return }
         debugPrint("movie player pause \(asset)")
         player.pause()
     }
@@ -129,23 +139,37 @@ public class MoviePlayer: ImageSource {
     }
     
     public func seekToTime(_ time: TimeInterval, shouldPlayAfterSeeking: Bool) {
-        let seekingCompletion = { [weak self] (success: Bool) in
-            print("movie player did seek to time:\(time) success:\(success)")
-            guard let self = self else { return }
-            if shouldPlayAfterSeeking {
-                self._resetTimeObservers()
-                self.isPlaying = true
-                self.player.rate = self.playrate
-            }
-        }
-        
         let targetTime = CMTime(seconds: time, preferredTimescale: 600)
         if shouldPlayAfterSeeking {
             // 0.1s has 3 frames tolerance for 30 FPS video, it should be enough if there is no sticky video
             let toleranceTime = CMTime(seconds: 0.1, preferredTimescale: 600)
-            player.seek(to: targetTime, toleranceBefore: toleranceTime, toleranceAfter: kCMTimeZero, completionHandler: seekingCompletion)
+            nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: toleranceTime, toleranceAfter: toleranceTime, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
         } else {
-            player.seek(to: targetTime, toleranceBefore: kCMTimeZero, toleranceAfter: kCMTimeZero, completionHandler: seekingCompletion)
+            nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: kCMTimeZero, toleranceAfter: kCMTimeZero, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
+        }
+        actuallySeekToTime()
+    }
+    
+    func actuallySeekToTime() {
+        // Avoid seeking choppy when fast seeking
+        // https://developer.apple.com/library/archive/qa/qa1820/_index.html#//apple_ref/doc/uid/DTS40016828    
+        guard !isSeeking, let seekingInfo = nextSeeking else { return }
+        isSeeking = true
+        player.seek(to: seekingInfo.time, toleranceBefore:seekingInfo.toleranceBefore, toleranceAfter: seekingInfo.toleranceAfter) { [weak self] success in
+            debugPrint("movie player did seek to time:\(seekingInfo.time.seconds) success:\(success)")
+            guard let self = self else { return }
+            if seekingInfo.shouldPlayAfterSeeking {
+                self._resetTimeObservers()
+                self.isPlaying = true
+                self.player.rate = self.playrate
+            }
+            
+            self.isSeeking = false
+            if seekingInfo.time != self.nextSeeking?.time {
+                self.actuallySeekToTime()
+            } else {
+                self.nextSeeking = nil
+            }
         }
     }
     
