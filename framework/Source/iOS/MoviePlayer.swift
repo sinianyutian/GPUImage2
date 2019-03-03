@@ -64,11 +64,18 @@ public class MoviePlayer: ImageSource {
     var framebufferUserInfo: [AnyHashable:Any]?
     var observations = [NSKeyValueObservation]()
     
-    struct SeekingInfo {
+    struct SeekingInfo: Equatable {
         let time: CMTime
         let toleranceBefore: CMTime
         let toleranceAfter: CMTime
         let shouldPlayAfterSeeking: Bool
+        
+        public static func == (lhs: MoviePlayer.SeekingInfo, rhs: MoviePlayer.SeekingInfo) -> Bool {
+            return lhs.time.seconds == rhs.time.seconds
+                && lhs.toleranceBefore.seconds == rhs.toleranceBefore.seconds
+                && lhs.toleranceAfter.seconds == rhs.toleranceAfter.seconds
+                && lhs.shouldPlayAfterSeeking == rhs.shouldPlayAfterSeeking
+        }
     }
     var nextSeeking: SeekingInfo?
     var isSeeking: Bool = false
@@ -121,6 +128,7 @@ public class MoviePlayer: ImageSource {
     public func resume() {
         isPlaying = true
         player.rate = playrate
+        debugPrint("movie player resume \(asset)")
     }
     
     public func pause() {
@@ -156,7 +164,7 @@ public class MoviePlayer: ImageSource {
         guard !isSeeking, let seekingInfo = nextSeeking else { return }
         isSeeking = true
         player.seek(to: seekingInfo.time, toleranceBefore:seekingInfo.toleranceBefore, toleranceAfter: seekingInfo.toleranceAfter) { [weak self] success in
-            debugPrint("movie player did seek to time:\(seekingInfo.time.seconds) success:\(success)")
+            debugPrint("movie player did seek to time:\(seekingInfo.time.seconds) success:\(success) shouldPlayAfterSeeking:\(seekingInfo.shouldPlayAfterSeeking)")
             guard let self = self else { return }
             if seekingInfo.shouldPlayAfterSeeking {
                 self._resetTimeObservers()
@@ -165,7 +173,7 @@ public class MoviePlayer: ImageSource {
             }
             
             self.isSeeking = false
-            if seekingInfo.time != self.nextSeeking?.time {
+            if seekingInfo != self.nextSeeking {
                 self.actuallySeekToTime()
             } else {
                 self.nextSeeking = nil
