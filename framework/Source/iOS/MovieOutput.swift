@@ -7,6 +7,10 @@ public protocol AudioEncodingTarget {
     func readyForNextAudioBuffer() -> Bool
 }
 
+public protocol MovieOutputDelegate: class {
+    func movieOutputDidStartWriting(_ movieOutput: MovieOutput, at time: CMTime)
+}
+
 public enum MovieOutputError: Error, CustomStringConvertible {
     case startWritingError(assetWriterError: Error?)
     case pixelBufferPoolNilError
@@ -29,6 +33,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     public let sources = SourceContainer()
     public let maximumInputs:UInt = 1
+    
+    public weak var delegate: MovieOutputDelegate?
     
     let assetWriter:AVAssetWriter
     let assetWriterVideoInput:AVAssetWriterInput
@@ -242,6 +248,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             if (self.previousFrameTime == nil) {
                 // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
                 self.assetWriter.startSession(atSourceTime: frameTime)
+                self.delegate?.movieOutputDidStartWriting(self, at: frameTime)
             }
             
             self.previousFrameTime = frameTime
@@ -361,6 +368,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             if (self.previousFrameTime == nil) {
                 // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
                 self.assetWriter.startSession(atSourceTime: frameTime)
+                self.delegate?.movieOutputDidStartWriting(self, at: frameTime)
             }
             
             self.previousFrameTime = frameTime
