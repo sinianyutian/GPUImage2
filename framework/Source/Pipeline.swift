@@ -31,7 +31,7 @@ infix operator --> : AdditionPrecedence
 // MARK: Extensions and supporting types
 
 public extension ImageSource {
-    public func addTarget(_ target:ImageConsumer, atTargetIndex:UInt? = nil) {
+    func addTarget(_ target:ImageConsumer, atTargetIndex:UInt? = nil) {
         if let targetIndex = atTargetIndex {
             target.setSource(self, atIndex:targetIndex)
             targets.append(target, indexAtTarget:targetIndex)
@@ -48,14 +48,14 @@ public extension ImageSource {
         }
     }
 
-    public func removeAllTargets() {
+    func removeAllTargets() {
         for (target, index) in targets {
             target.removeSourceAtIndex(index)
         }
         targets.removeAll()
     }
     
-    public func remove(_ target:ImageConsumer) {
+    func remove(_ target:ImageConsumer) {
         for (testTarget, index) in targets {
             if(target === testTarget) {
                 target.removeSourceAtIndex(index)
@@ -64,7 +64,7 @@ public extension ImageSource {
         }
     }
     
-    public func updateTargetsWithFramebuffer(_ framebuffer:Framebuffer) {
+    func updateTargetsWithFramebuffer(_ framebuffer:Framebuffer) {
         var foundTargets = [(ImageConsumer, UInt)]()
         for target in targets {
             foundTargets.append(target)
@@ -86,15 +86,15 @@ public extension ImageSource {
 }
 
 public extension ImageConsumer {
-    public func addSource(_ source:ImageSource) -> UInt? {
+    func addSource(_ source:ImageSource) -> UInt? {
         return sources.append(source, maximumInputs:maximumInputs)
     }
     
-    public func setSource(_ source:ImageSource, atIndex:UInt) {
+    func setSource(_ source:ImageSource, atIndex:UInt) {
         _ = sources.insert(source, atIndex:atIndex, maximumInputs:maximumInputs)
     }
 
-    public func removeSourceAtIndex(_ index:UInt) {
+    func removeSourceAtIndex(_ index:UInt) {
         sources.removeAtIndex(index)
     }
 }

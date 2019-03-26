@@ -94,8 +94,8 @@ public class PictureOutput: ImageConsumer {
             let image = UIImage(cgImage:cgImageFromBytes, scale:1.0, orientation:.up)
             let imageData:Data
             switch encodedImageFormat {
-                case .png: imageData = UIImagePNGRepresentation(image)! // TODO: Better error handling here
-                case .jpeg: imageData = UIImageJPEGRepresentation(image, encodedJPEGImageCompressionQuality)!
+            case .png: imageData = image.pngData()! // TODO: Better error handling here
+            case .jpeg: imageData = image.jpegData(compressionQuality: encodedJPEGImageCompressionQuality)!
             }
             
             imageCallback(imageData)
@@ -120,7 +120,7 @@ public class PictureOutput: ImageConsumer {
 }
 
 public extension ImageSource {
-    public func saveNextFrameToURL(_ url:URL, format:PictureFileFormat) {
+    func saveNextFrameToURL(_ url:URL, format:PictureFileFormat) {
         let pictureOutput = PictureOutput()
         pictureOutput.saveNextFrameToURL(url, format:format)
         self --> pictureOutput
@@ -128,13 +128,13 @@ public extension ImageSource {
 }
 
 public extension UIImage {
-    public func filterWithOperation<T:ImageProcessingOperation>(_ operation:T) throws -> UIImage  {
+    func filterWithOperation<T:ImageProcessingOperation>(_ operation:T) throws -> UIImage  {
         return try filterWithPipeline{input, output in
             input --> operation --> output
         }
     }
     
-    public func filterWithPipeline(_ pipeline:(PictureInput, PictureOutput) -> ()) throws -> UIImage  {
+    func filterWithPipeline(_ pipeline:(PictureInput, PictureOutput) -> ()) throws -> UIImage  {
         let picture = try PictureInput(image:self)
         var outputImage:UIImage?
         let pictureOutput = PictureOutput()
@@ -150,5 +150,5 @@ public extension UIImage {
 
 // Why are these flipped in the callback definition?
 func dataProviderReleaseCallback(_ context:UnsafeMutableRawPointer?, data:UnsafeRawPointer, size:Int) {
-    data.deallocate(bytes:size, alignedTo:1)
+    data.deallocate()
 }
