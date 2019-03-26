@@ -95,7 +95,7 @@ public class MoviePlayer: ImageSource {
         
         playerItem = AVPlayerItem(asset: asset)
         playerItem.add(videoOutput)
-        playerItem.audioTimePitchAlgorithm = AVAudioTimePitchAlgorithmVarispeed
+        playerItem.audioTimePitchAlgorithm = .varispeed
         player = AVPlayer(playerItem: playerItem)
         _setupObservers()
     }
@@ -153,7 +153,7 @@ public class MoviePlayer: ImageSource {
             let toleranceTime = CMTime(seconds: 0.1, preferredTimescale: 600)
             nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: toleranceTime, toleranceAfter: toleranceTime, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
         } else {
-            nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: kCMTimeZero, toleranceAfter: kCMTimeZero, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
+            nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: .zero, toleranceAfter: .zero, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
         }
         actuallySeekToTime()
     }
@@ -216,7 +216,7 @@ private extension MoviePlayer {
     func _setupDisplayLinkIfNeeded() {
         if displayLink == nil {
             displayLink = CADisplayLink(target: self, selector: #selector(displayLinkCallback))
-            displayLink?.add(to: RunLoop.main, forMode: .commonModes)
+            displayLink?.add(to: RunLoop.main, forMode: .common)
         }
     }
     

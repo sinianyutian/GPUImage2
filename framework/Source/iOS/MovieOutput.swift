@@ -71,7 +71,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         debugPrint("movie output deinit \(assetWriter.outputURL)")
     }
     
-    public init(URL:Foundation.URL, size:Size, fileType:String = AVFileTypeQuickTimeMovie, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil, keepLastPixelBuffer: Bool = false) throws {
+    public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil, keepLastPixelBuffer: Bool = false) throws {
 
         debugPrint("movie output init \(URL)")
 
@@ -99,7 +99,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         localSettings[AVVideoHeightKey] = localSettings[AVVideoHeightKey] ?? size.height
         localSettings[AVVideoCodecKey] =  localSettings[AVVideoCodecKey] ?? AVVideoCodecH264
         
-        assetWriterVideoInput = AVAssetWriterInput(mediaType:AVMediaTypeVideo, outputSettings:localSettings)
+        assetWriterVideoInput = AVAssetWriterInput(mediaType:.video, outputSettings:localSettings)
         assetWriterVideoInput.expectsMediaDataInRealTime = liveVideo
         
         // You should provide a naturalTimeScale if you have one for the current media.
@@ -108,10 +108,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             assetWriter.movieTimeScale = naturalTimeScale
             assetWriterVideoInput.mediaTimeScale = naturalTimeScale
             // This is set to make sure that a functional movie is produced, even if the recording is cut off mid-stream. Only the last second should be lost in that case.
-            assetWriter.movieFragmentInterval = CMTimeMakeWithSeconds(1, naturalTimeScale)
+            assetWriter.movieFragmentInterval = CMTime(seconds: 1, preferredTimescale: naturalTimeScale)
         }
         else {
-            assetWriter.movieFragmentInterval = CMTimeMakeWithSeconds(1, 1000)
+            assetWriter.movieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 1000)
         }
         
         encodingLiveVideo = liveVideo
@@ -416,7 +416,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     // MARK: Audio support
     
     public func activateAudioTrack() {
-        assetWriterAudioInput = AVAssetWriterInput(mediaType:AVMediaTypeAudio, outputSettings:self.audioSettings, sourceFormatHint:self.audioSourceFormatHint)
+        assetWriterAudioInput = AVAssetWriterInput(mediaType:.audio, outputSettings:self.audioSettings, sourceFormatHint:self.audioSourceFormatHint)
 
         assetWriter.add(assetWriterAudioInput!)
         assetWriterAudioInput?.expectsMediaDataInRealTime = encodingLiveVideo
@@ -500,16 +500,16 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
 
 
 public extension Timestamp {
-    public init(_ time:CMTime) {
+    init(_ time:CMTime) {
         self.value = time.value
         self.timescale = time.timescale
         self.flags = TimestampFlags(rawValue:time.flags.rawValue)
         self.epoch = time.epoch
     }
     
-    public var asCMTime:CMTime {
+    var asCMTime:CMTime {
         get {
-            return CMTimeMakeWithEpoch(value, timescale, epoch)
+            return CMTimeMakeWithEpoch(value: value, timescale: timescale, epoch: epoch)
         }
     }
 }

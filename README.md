@@ -226,8 +226,8 @@ let exportedURL = URL(string:"test.mp4", relativeTo:documentsDir)!
 
 let asset = AVURLAsset(url:movieURL, options:[AVURLAssetPreferPreciseDurationAndTimingKey:NSNumber(value:true)])
 
-guard let videoTrack = asset.tracks(withMediaType:AVMediaType.video).first else { return }
-let audioTrack = asset.tracks(withMediaType:AVMediaType.audio).first
+guard let videoTrack = asset.tracks(withMediaType:.video).first else { return }
+let audioTrack = asset.tracks(withMediaType:.audio).first
 
 // If you would like passthrough audio instead, set both audioDecodingSettings and audioEncodingSettings to nil
 let audioDecodingSettings:[String:Any] = [AVFormatIDKey:kAudioFormatLinearPCM] // Noncompressed audio samples
