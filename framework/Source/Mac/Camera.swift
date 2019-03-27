@@ -107,8 +107,8 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
             self.audioOutput?.setSampleBufferDelegate(nil, queue:nil)
         }
     }
-
-    public func captureOutput(_ captureOutput:AVCaptureOutput!, didOutputSampleBuffer sampleBuffer:CMSampleBuffer!, from connection:AVCaptureConnection!) {
+    
+    public func captureOutput(_ captureOutput: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard (captureOutput != audioOutput) else {
             self.processAudioSampleBuffer(sampleBuffer)
             return
