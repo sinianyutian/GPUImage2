@@ -131,11 +131,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         self.keepLastPixelBuffer = keepLastPixelBuffer
     }
     
-    public func startRecording(_ completionCallback:((_ started: Bool, _ error: Error?) -> Void)? = nil) {
+    public func startRecording(sync: Bool = false, _ completionCallback:((_ started: Bool, _ error: Error?) -> Void)? = nil) {
         // Don't do this work on the movieProcessingContext queue so we don't block it.
         // If it does get blocked framebuffers will pile up from live video and after it is no longer blocked (this work has finished)
         // we will be able to accept framebuffers but the ones that piled up will come in too quickly resulting in most being dropped.
-        DispatchQueue.global(qos: .utility).async {
+        let block = { () -> Void in
             do {
                 var success = false
                 try NSObject.catchException {
@@ -148,16 +148,16 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 
                 guard self.assetWriterPixelBufferInput.pixelBufferPool != nil else {
                     /*
-                    When the pixelBufferPool returns nil, check the following:
-                    1. the the output file of the AVAssetsWriter doesn't exist.
-                    2. use the pixelbuffer after calling startSessionAtTime: on the AVAssetsWriter.
-                    3. the settings of AVAssetWriterInput and AVAssetWriterInputPixelBufferAdaptor are correct.
-                    4. the present times of appendPixelBuffer uses are not the same.
-                    https://stackoverflow.com/a/20110179/1275014
-                    */
+                     When the pixelBufferPool returns nil, check the following:
+                     1. the the output file of the AVAssetsWriter doesn't exist.
+                     2. use the pixelbuffer after calling startSessionAtTime: on the AVAssetsWriter.
+                     3. the settings of AVAssetWriterInput and AVAssetWriterInputPixelBufferAdaptor are correct.
+                     4. the present times of appendPixelBuffer uses are not the same.
+                     https://stackoverflow.com/a/20110179/1275014
+                     */
                     throw MovieOutputError.pixelBufferPoolNilError
                 }
-                    
+                
                 self.isRecording = true
                 
                 self.synchronizedEncodingDebugPrint("MovieOutput started writing")
@@ -168,6 +168,12 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 
                 completionCallback?(false, error)
             }
+        }
+        
+        if sync {
+            block()
+        } else {
+            DispatchQueue.global(qos: .userInitiated).async(execute: block)
         }
     }
     
