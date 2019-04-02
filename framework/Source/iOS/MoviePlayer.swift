@@ -233,6 +233,12 @@ private extension MoviePlayer {
     
     func _resetTimeObservers() {
         timeObserversQueue.removeAll()
+        for observer in totalTimeObservers {
+            guard observer.targetTime >= startTime ?? 0 && observer.targetTime <= endTime ?? asset.duration.seconds else {
+                continue
+            }
+            timeObserversQueue.append(observer)
+        }
         if let endTime = endTime {
             let endTimeObserver = MoviePlayerTimeObserver(targetTime: endTime) { [weak self] _ in
                 if self?.loop == true && self?.isPlaying == true {
@@ -242,13 +248,8 @@ private extension MoviePlayer {
                     self?.pause()
                 }
             }
-            timeObserversQueue.append(endTimeObserver)
-        }
-        for observer in totalTimeObservers {
-            guard observer.targetTime >= startTime ?? 0 else {
-                break
-            }
-            timeObserversQueue.append(observer)
+            let insertIndex: Int = timeObserversQueue.reversed().firstIndex { endTime < $0.targetTime } ?? 0
+            timeObserversQueue.insert(endTimeObserver, at: insertIndex)
         }
     }
     
