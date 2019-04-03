@@ -59,6 +59,11 @@ public class MoviePlayer: ImageSource {
             player.isMuted = isMuted
         }
     }
+    public var volume: Float {
+        get { return player.volume }
+        set { player.volume = newValue }
+    }
+    
     
     var movieFramebuffer: Framebuffer?
     var framebufferUserInfo: [AnyHashable:Any]?
