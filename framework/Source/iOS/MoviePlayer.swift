@@ -166,10 +166,10 @@ public class MoviePlayer: ImageSource {
     func actuallySeekToTime() {
         // Avoid seeking choppy when fast seeking
         // https://developer.apple.com/library/archive/qa/qa1820/_index.html#//apple_ref/doc/uid/DTS40016828    
-        guard !isSeeking, let seekingInfo = nextSeeking else { return }
+        guard !isSeeking, let seekingInfo = nextSeeking, player.status == .readyToPlay else { return }
         isSeeking = true
         player.seek(to: seekingInfo.time, toleranceBefore:seekingInfo.toleranceBefore, toleranceAfter: seekingInfo.toleranceAfter) { [weak self] success in
-            debugPrint("movie player did seek to time:\(seekingInfo.time.seconds) success:\(success) shouldPlayAfterSeeking:\(seekingInfo.shouldPlayAfterSeeking)")
+//            debugPrint("movie player did seek to time:\(seekingInfo.time.seconds) success:\(success) shouldPlayAfterSeeking:\(seekingInfo.shouldPlayAfterSeeking)")
             guard let self = self else { return }
             if seekingInfo.shouldPlayAfterSeeking {
                 self._resetTimeObservers()
@@ -259,7 +259,7 @@ private extension MoviePlayer {
     }
     
     func playerRateDidChange() {
-        debugPrint("rate change to:\(player.rate) asset:\(asset) status:\(player.status.rawValue)")
+//        debugPrint("rate change to:\(player.rate) asset:\(asset) status:\(player.status.rawValue)")
         resumeIfNeeded()
     }
     
