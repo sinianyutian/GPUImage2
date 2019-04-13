@@ -179,6 +179,7 @@ public class MoviePlayer: ImageSource {
         if shouldPlayAfterSeeking {
             // 0.1s has 3 frames tolerance for 30 FPS video, it should be enough if there is no sticky video
             let toleranceTime = CMTime(seconds: 0.1, preferredTimescale: 600)
+            isPlaying = true
             nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: toleranceTime, toleranceAfter: toleranceTime, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
         } else {
             nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: .zero, toleranceAfter: .zero, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
@@ -194,9 +195,8 @@ public class MoviePlayer: ImageSource {
         player.seek(to: seekingInfo.time, toleranceBefore:seekingInfo.toleranceBefore, toleranceAfter: seekingInfo.toleranceAfter) { [weak self] success in
 //            debugPrint("movie player did seek to time:\(seekingInfo.time.seconds) success:\(success) shouldPlayAfterSeeking:\(seekingInfo.shouldPlayAfterSeeking)")
             guard let self = self else { return }
-            if seekingInfo.shouldPlayAfterSeeking {
+            if seekingInfo.shouldPlayAfterSeeking && self.isPlaying {
                 self._resetTimeObservers()
-                self.isPlaying = true
                 self.player.rate = self.playrate
             }
             
