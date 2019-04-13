@@ -29,16 +29,15 @@ public class MoviePlayer: ImageSource {
     public var runBenchmark = false
     public var logEnabled = false
     public weak var delegate: MoviePlayerDelegate?
-    public let asset: AVAsset
     public let player: AVPlayer
-    public var isPlaying = false
-    
     public var startTime: TimeInterval?
     public var endTime: TimeInterval?
-    public var loop: Bool
+    public var loop: Bool = false
+    public private(set) var asset: AVAsset?
+    public private(set) var isPlaying = false
     
-    let playerItem: AVPlayerItem
-    let videoOutput: AVPlayerItemVideoOutput
+    private(set) var playerItem: AVPlayerItem?
+    var videoOutput: AVPlayerItemVideoOutput?
     var displayLink: CADisplayLink?
     
     let yuvConversionShader: ShaderProgram
@@ -49,11 +48,7 @@ public class MoviePlayer: ImageSource {
     var timebaseInfo = mach_timebase_info_data_t()
     var totalFramesSent = 0
     var totalFrameTime: Double = 0.0
-    public var playrate: Float = 1.0 {
-        didSet {
-            player.rate = playrate
-        }
-    }
+    public var playrate: Float = 1.0
     public var isMuted: Bool = false {
         didSet {
             player.isMuted = isMuted
@@ -63,7 +58,12 @@ public class MoviePlayer: ImageSource {
         get { return player.volume }
         set { player.volume = newValue }
     }
-    
+    public var assetDuration: TimeInterval {
+        return asset?.duration.seconds ?? 0
+    }
+    public var isReadyToPlay: Bool {
+        return player.status == .readyToPlay
+    }
     
     var movieFramebuffer: Framebuffer?
     var framebufferUserInfo: [AnyHashable:Any]?
@@ -85,46 +85,67 @@ public class MoviePlayer: ImageSource {
     var nextSeeking: SeekingInfo?
     var isSeeking: Bool = false
     
-    public init(asset: AVAsset, loop: Bool = false) throws {
-        debugPrint("movie player init \(asset)")
-        self.asset = asset
-        self.loop = loop
+    public init() {
+        debugPrint("movie player init")
         self.yuvConversionShader = crashOnShaderCompileFailure("MoviePlayer") {
             try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(2),
                                                                     fragmentShader: YUVConversionFullRangeFragmentShader)
         }
-        
-        let outputSettings = [String(kCVPixelBufferPixelFormatTypeKey) : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
-        videoOutput = AVPlayerItemVideoOutput(outputSettings: outputSettings)
-        videoOutput.suppressesPlayerRendering = true
-        
-        playerItem = AVPlayerItem(asset: asset)
-        playerItem.add(videoOutput)
-        playerItem.audioTimePitchAlgorithm = .varispeed
-        player = AVPlayer(playerItem: playerItem)
-        _setupObservers()
-    }
-    
-    public convenience init(url: URL, loop: Bool = false) throws {
-        let inputOptions = [AVURLAssetPreferPreciseDurationAndTimingKey: NSNumber(value: true)]
-        let inputAsset = AVURLAsset(url: url, options: inputOptions)
-        try self.init(asset: inputAsset, loop: loop)
+        // Make sure player it intialized on the main thread, or it might cause KVO crash
+        assert(Thread.isMainThread)
+        player = AVQueuePlayer(playerItem: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(playerDidPlayToEnd), name: .AVPlayerItemDidPlayToEndTime, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(playerStalled), name: .AVPlayerItemPlaybackStalled, object: nil)
     }
     
     deinit {
-        debugPrint("movie player deinit \(asset)")
+        debugPrint("movie player deinit \(String(describing: asset))")
         stop()
         movieFramebuffer?.unlock()
         observations.forEach { $0.invalidate() }
+        observations.removeAll()
         NotificationCenter.default.removeObserver(self)
+    }
+    
+    // MARK: Data Source
+    public func setupPlayer(url: URL) {
+        let inputOptions = [AVURLAssetPreferPreciseDurationAndTimingKey: NSNumber(value: true)]
+        let inputAsset = AVURLAsset(url: url, options: inputOptions)
+        setupPlayer(asset: inputAsset)
+    }
+    
+    public func setupPlayer(asset: AVAsset) {
+        if isPlaying {
+            stop()
+        }
+        
+        self.videoOutput.map { self.playerItem?.remove($0) }
+        
+        let playerItem = AVPlayerItem(asset: asset)
+        let outputSettings = [String(kCVPixelBufferPixelFormatTypeKey) : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+        let videoOutput = AVPlayerItemVideoOutput(outputSettings: outputSettings)
+        videoOutput.suppressesPlayerRendering = true
+        playerItem.add(videoOutput)
+        playerItem.audioTimePitchAlgorithm = .varispeed
+        
+        self.asset = asset
+        self.playerItem = playerItem
+        self.videoOutput = videoOutput
+        player.replaceCurrentItem(with: playerItem)
+        _setupPlayerObservers()
     }
     
     // MARK: -
     // MARK: Playback control
     
     public func start() {
+        guard playerItem != nil else {
+            assert(playerItem != nil)
+            debugPrint("ERROR! player hasn't been setup before starting")
+            return
+        }
         isPlaying = true
-        debugPrint("movie player start \(asset)")
+        debugPrint("movie player start \(String(describing: asset))")
         _setupDisplayLinkIfNeeded()
         _resetTimeObservers()
         seekToTime(startTime ?? 0, shouldPlayAfterSeeking: true)
@@ -133,22 +154,24 @@ public class MoviePlayer: ImageSource {
     public func resume() {
         isPlaying = true
         player.rate = playrate
-        debugPrint("movie player resume \(asset)")
+        debugPrint("movie player resume \(String(describing: asset))")
     }
     
     public func pause() {
         isPlaying = false
         guard player.rate != 0 else { return }
-        debugPrint("movie player pause \(asset)")
+        debugPrint("movie player pause \(String(describing: asset))")
         player.pause()
     }
     
     public func stop() {
         pause()
-        debugPrint("movie player stop \(asset)")
+        debugPrint("movie player stop \(String(describing: asset))")
         timeObserversQueue.removeAll()
         displayLink?.invalidate()
         displayLink = nil
+        isSeeking = false
+        nextSeeking = nil
     }
     
     public func seekToTime(_ time: TimeInterval, shouldPlayAfterSeeking: Bool) {
@@ -166,7 +189,7 @@ public class MoviePlayer: ImageSource {
     func actuallySeekToTime() {
         // Avoid seeking choppy when fast seeking
         // https://developer.apple.com/library/archive/qa/qa1820/_index.html#//apple_ref/doc/uid/DTS40016828    
-        guard !isSeeking, let seekingInfo = nextSeeking, player.status == .readyToPlay else { return }
+        guard !isSeeking, let seekingInfo = nextSeeking, isReadyToPlay else { return }
         isSeeking = true
         player.seek(to: seekingInfo.time, toleranceBefore:seekingInfo.toleranceBefore, toleranceAfter: seekingInfo.toleranceAfter) { [weak self] success in
 //            debugPrint("movie player did seek to time:\(seekingInfo.time.seconds) success:\(success) shouldPlayAfterSeeking:\(seekingInfo.shouldPlayAfterSeeking)")
@@ -178,6 +201,7 @@ public class MoviePlayer: ImageSource {
             }
             
             self.isSeeking = false
+            
             if seekingInfo != self.nextSeeking {
                 self.actuallySeekToTime()
             } else {
@@ -225,21 +249,34 @@ private extension MoviePlayer {
         }
     }
     
-    func _setupObservers() {
+    func _setupPlayerObservers() {
+        _removePlayerObservers()
         observations.append(player.observe(\AVPlayer.rate) { [weak self] _, _ in
             self?.playerRateDidChange()
+        })
+        observations.append(player.observe(\AVPlayer.currentItem) { [weak self] _, _ in
+            self?.playerCurrentItemDidChange()
         })
         observations.append(player.observe(\AVPlayer.status) { [weak self] _, _ in
             self?.playerStatusDidChange()
         })
-        NotificationCenter.default.addObserver(self, selector: #selector(playerDidPlayToEnd), name: .AVPlayerItemDidPlayToEndTime, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(playerStalled), name: .AVPlayerItemPlaybackStalled, object: nil)
+        
+        if let playerItem = player.currentItem {
+            observations.append(playerItem.observe(\AVPlayerItem.status) { [weak self] _, _ in
+                self?.playerItemStatusDidChange()
+            })
+        }
+    }
+    
+    func _removePlayerObservers() {
+        observations.forEach { $0.invalidate() }
+        observations.removeAll()
     }
     
     func _resetTimeObservers() {
         timeObserversQueue.removeAll()
         for observer in totalTimeObservers {
-            guard observer.targetTime >= startTime ?? 0 && observer.targetTime <= endTime ?? asset.duration.seconds else {
+            guard observer.targetTime >= startTime ?? 0 && observer.targetTime <= endTime ?? assetDuration else {
                 continue
             }
             timeObserversQueue.append(observer)
@@ -263,13 +300,26 @@ private extension MoviePlayer {
         resumeIfNeeded()
     }
     
+    func playerCurrentItemDidChange() {
+        if player.currentItem == nil && isPlaying, let playerItem = playerItem {
+            player.replaceCurrentItem(with: playerItem)
+            start()
+            debugPrint("Warning: Player currentItem change to nil asset:\(String(describing: asset))")
+        }
+    }
+    
     func playerStatusDidChange() {
-        debugPrint("status change to:\(player.status.rawValue) asset:\(asset)")
+        debugPrint("Player status change to:\(player.status.rawValue) asset:\(String(describing: asset))")
+        resumeIfNeeded()
+    }
+    
+    func playerItemStatusDidChange() {
+        debugPrint("PlayerItem status change to:\(String(describing: player.currentItem?.status.rawValue)) asset:\(String(describing: asset))")
         resumeIfNeeded()
     }
     
     func resumeIfNeeded() {
-        guard player.status == .readyToPlay && isPlaying == true && player.rate != playrate else { return }
+        guard isReadyToPlay && isPlaying == true && player.rate != playrate else { return }
         player.rate = playrate
     }
     
@@ -377,8 +427,8 @@ private extension MoviePlayer {
                 return
             }
             let currentTime = self.player.currentTime()
-            if self.videoOutput.hasNewPixelBuffer(forItemTime: currentTime) {
-                guard let pixelBuffer = self.videoOutput.copyPixelBuffer(forItemTime: currentTime, itemTimeForDisplay: nil) else {
+            if self.videoOutput?.hasNewPixelBuffer(forItemTime: currentTime) == true {
+                guard let pixelBuffer = self.videoOutput?.copyPixelBuffer(forItemTime: currentTime, itemTimeForDisplay: nil) else {
                     print("Failed to copy pixel buffer at time:\(currentTime)")
                     return
                 }
@@ -389,7 +439,7 @@ private extension MoviePlayer {
     }
     
     @objc func playerDidPlayToEnd(notification: Notification) {
-        guard loop && isPlaying && (endTime == nil || player.currentTime() == playerItem.asset.duration) else { return }
+        guard loop && isPlaying && (endTime == nil || player.currentTime().seconds == assetDuration) else { return }
         start()
     }
     
