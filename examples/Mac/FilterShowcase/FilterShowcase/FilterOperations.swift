@@ -133,7 +133,7 @@ let filterOperations: Array<FilterOperationInterface> = [
         filter:{TransformOperation()},
         listName:"Transform (2-D)",
         titleName:"Transform (2-D)",
-        sliderConfiguration:.enabled(minimumValue:0.0, maximumValue:6.28, initialValue:0.75),
+        sliderConfiguration:.enabled(minimumValue:-3.14/2, maximumValue:3.14/2, initialValue:3.14/4),
         sliderUpdateCallback:{(filter, sliderValue) in
             filter.transform = Matrix4x4(CGAffineTransform(rotationAngle:CGFloat(sliderValue)))
         },
