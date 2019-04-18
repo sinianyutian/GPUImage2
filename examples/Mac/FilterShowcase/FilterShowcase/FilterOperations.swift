@@ -1185,12 +1185,34 @@ func updateFilter(_ filter: TransformOperation, _ angle: CGFloat) {
         fatalError("can't find crop filter")
     }
 
-    let w: CGFloat = 480.0
-    let h: CGFloat = 640.0
-    let ratio = h/w
-    let w1 = w / (cos(angle) + ratio * sin(angle))
-    let h1 = w * ratio
+    let w0: CGFloat = 480.0
+    let h0: CGFloat = 640.0
 
+    let ratio = h0/w0
+
+    // new rect width/height
+    let w1 = w0 / (cos(angle) + ratio * sin(angle))
+    let h1 = w1 * ratio
+
+    let a = sqrt(pow(w0, 2.0) + pow(h0, 2.0)) / 2.0
+    // upper case for angle
+    let A = atan(h0/w0)
+    let B = CGFloat.pi - angle - A
+    let b = a / sin(B) * sin(A)
+    let c = a - b
+    let d = c / sin(angle) * sin(B)
+    let e = d * sin(angle)
+    let f = w1 * sin(angle) * cos(angle) - e
+    let g = c / cos(angle) * cos(A)
+    let h = a / sin(B) * sin(angle) - g
+    let i = tan(angle) * f
+
+    let x = h - i
+    let y = f
+
+    crop.locationOfCropInPixels = Position(Float(x), Float(y))
     crop.cropSizeInPixels = Size(width: Float(w1), height: Float(h1))
+
+    print("angle: \(Int(angle/CGFloat.pi * 180)), x: \(x), y: \(y), size: \(w1)*\(h1)")
     filter.transform = Matrix4x4(CGAffineTransform(rotationAngle: angle))
 }
