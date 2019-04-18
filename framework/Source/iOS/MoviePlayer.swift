@@ -406,6 +406,9 @@ private extension MoviePlayer {
         
         updateTargetsWithFramebuffer(framebuffer)
         
+        // Clean up
+        CVOpenGLESTextureCacheFlush(sharedImageProcessingContext.coreVideoTextureCache, 0)
+        
         if(runBenchmark || logEnabled) {
             totalFramesSent += 1
         }

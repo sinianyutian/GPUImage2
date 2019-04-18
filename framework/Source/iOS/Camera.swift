@@ -369,6 +369,11 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
             cameraFramebuffer.timingStyle = .videoFrame(timestamp:Timestamp(currentTime))
             self.updateTargetsWithFramebuffer(cameraFramebuffer)
             
+            // Clean up after all done
+            if self.captureAsYUV && sharedImageProcessingContext.supportsTextureCaches() {
+                CVOpenGLESTextureCacheFlush(sharedImageProcessingContext.coreVideoTextureCache, 0)
+            }
+            
             if self.runBenchmark {
                 self.numberOfFramesCaptured += 1
                 if (self.numberOfFramesCaptured > initialBenchmarkFramesToIgnore) {
