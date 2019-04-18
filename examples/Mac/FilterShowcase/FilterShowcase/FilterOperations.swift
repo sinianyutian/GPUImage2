@@ -133,7 +133,7 @@ let filterOperations: Array<FilterOperationInterface> = [
         filter:{TransformOperation()},
         listName:"QuickShot",
         titleName:"QuickShot",
-        sliderConfiguration:.enabled(minimumValue:-3.14/2, maximumValue:3.14/2, initialValue:3.14/4),
+        sliderConfiguration:.enabled(minimumValue:0, maximumValue:Float.pi/2, initialValue:Float.pi/6),
         sliderUpdateCallback:{(filter, sliderValue) in
             updateFilter(filter, CGFloat(sliderValue))
         },
@@ -1180,7 +1180,17 @@ let filterOperations: Array<FilterOperationInterface> = [
     // TODO: Poisson blend
 ]
 
-
 func updateFilter(_ filter: TransformOperation, _ angle: CGFloat) {
+    guard let crop = (filter.targets.compactMap { $0.0 as? Crop }).first else {
+        fatalError("can't find crop filter")
+    }
+
+    let w: CGFloat = 480.0
+    let h: CGFloat = 640.0
+    let ratio = h/w
+    let w1 = w / (cos(angle) + ratio * sin(angle))
+    let h1 = w * ratio
+
+    crop.cropSizeInPixels = Size(width: Float(w1), height: Float(h1))
     filter.transform = Matrix4x4(CGAffineTransform(rotationAngle: angle))
 }
