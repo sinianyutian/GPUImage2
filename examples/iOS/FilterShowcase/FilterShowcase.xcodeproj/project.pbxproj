@@ -22,6 +22,7 @@
 		BCFB05A31CBF1AE5009B2333 /* lookup_soft_elegance_1.png in Resources */ = {isa = PBXBuildFile; fileRef = BCFB059F1CBF1AE5009B2333 /* lookup_soft_elegance_1.png */; };
 		BCFB05A41CBF1AE5009B2333 /* lookup_soft_elegance_2.png in Resources */ = {isa = PBXBuildFile; fileRef = BCFB05A01CBF1AE5009B2333 /* lookup_soft_elegance_2.png */; };
 		BCFB078A1CBF361A009B2333 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = BCFB07881CBF361A009B2333 /* LaunchScreen.storyboard */; };
+		D1F417F522687A54001A097B /* QuickshotFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F417F422687A54001A097B /* QuickshotFilter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -93,6 +94,7 @@
 		BCFB059F1CBF1AE5009B2333 /* lookup_soft_elegance_1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = lookup_soft_elegance_1.png; path = ../../../../framework/Source/Operations/LookupImages/lookup_soft_elegance_1.png; sourceTree = "<group>"; };
 		BCFB05A01CBF1AE5009B2333 /* lookup_soft_elegance_2.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = lookup_soft_elegance_2.png; path = ../../../../framework/Source/Operations/LookupImages/lookup_soft_elegance_2.png; sourceTree = "<group>"; };
 		BCFB07891CBF361A009B2333 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		D1F417F422687A54001A097B /* QuickshotFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickshotFilter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -169,6 +171,7 @@
 			children = (
 				BCFB05931CBF1AAF009B2333 /* FilterOperations.swift */,
 				BCFB05941CBF1AAF009B2333 /* FilterOperationTypes.swift */,
+				D1F417F422687A54001A097B /* QuickshotFilter.swift */,
 				BC9E36451E525A3200B8604F /* GPUImage.xcodeproj */,
 			);
 			name = Operations;
@@ -296,6 +299,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BC0037C1195CA11B00B9D651 /* FilterDisplayViewController.swift in Sources */,
+				D1F417F522687A54001A097B /* QuickshotFilter.swift in Sources */,
 				BC0037BF195CA11B00B9D651 /* FilterListViewController.swift in Sources */,
 				BC0037BD195CA11B00B9D651 /* AppDelegate.swift in Sources */,
 				BCFB05961CBF1AAF009B2333 /* FilterOperationTypes.swift in Sources */,

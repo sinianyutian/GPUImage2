@@ -147,6 +147,16 @@ let filterOperations: Array<FilterOperationInterface> = [
         })
     ),
     FilterOperation(
+        filter:{QuickshotFilter()},
+        listName:"QuickShot2",
+        titleName:"QuickShot2",
+        sliderConfiguration:.enabled(minimumValue:0, maximumValue:Float.pi/2, initialValue:Float.pi/6),
+        sliderUpdateCallback:{(filter, sliderValue) in
+            filter.angle = sliderValue
+        },
+        filterOperationType:.singleInput
+    ),
+    FilterOperation(
         filter:{TransformOperation()},
         listName:"Transform (2-D)",
         titleName:"Transform (2-D)",
