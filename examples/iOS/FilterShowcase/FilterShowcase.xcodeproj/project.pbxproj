@@ -23,6 +23,7 @@
 		BCFB05A41CBF1AE5009B2333 /* lookup_soft_elegance_2.png in Resources */ = {isa = PBXBuildFile; fileRef = BCFB05A01CBF1AE5009B2333 /* lookup_soft_elegance_2.png */; };
 		BCFB078A1CBF361A009B2333 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = BCFB07881CBF361A009B2333 /* LaunchScreen.storyboard */; };
 		D1F417F522687A54001A097B /* QuickshotFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F417F422687A54001A097B /* QuickshotFilter.swift */; };
+		D1F417FA2268840F001A097B /* MotionDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F417F92268840F001A097B /* MotionDetector.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,6 +96,7 @@
 		BCFB05A01CBF1AE5009B2333 /* lookup_soft_elegance_2.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = lookup_soft_elegance_2.png; path = ../../../../framework/Source/Operations/LookupImages/lookup_soft_elegance_2.png; sourceTree = "<group>"; };
 		BCFB07891CBF361A009B2333 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		D1F417F422687A54001A097B /* QuickshotFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickshotFilter.swift; sourceTree = "<group>"; };
+		D1F417F92268840F001A097B /* MotionDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionDetector.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -172,6 +174,7 @@
 				BCFB05931CBF1AAF009B2333 /* FilterOperations.swift */,
 				BCFB05941CBF1AAF009B2333 /* FilterOperationTypes.swift */,
 				D1F417F422687A54001A097B /* QuickshotFilter.swift */,
+				D1F417F92268840F001A097B /* MotionDetector.swift */,
 				BC9E36451E525A3200B8604F /* GPUImage.xcodeproj */,
 			);
 			name = Operations;
@@ -304,6 +307,7 @@
 				BC0037BD195CA11B00B9D651 /* AppDelegate.swift in Sources */,
 				BCFB05961CBF1AAF009B2333 /* FilterOperationTypes.swift in Sources */,
 				BCFB05951CBF1AAF009B2333 /* FilterOperations.swift in Sources */,
+				D1F417FA2268840F001A097B /* MotionDetector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

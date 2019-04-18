@@ -86,6 +86,11 @@ class FilterDisplayViewController: UIViewController, UISplitViewControllerDelega
     override func viewDidLoad() {
         super.viewDidLoad()
         self.configureView()
+
+        MotionDetector.shared.start { [weak self] rotation in
+            self?.filterSlider?.value = Float(rotation)
+            self?.updateSliderValue()
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -94,6 +99,8 @@ class FilterDisplayViewController: UIViewController, UISplitViewControllerDelega
             videoCamera.removeAllTargets()
             blendImage?.removeAllTargets()
         }
+
+        MotionDetector.shared.stop()
         
         super.viewWillDisappear(animated)
     }
