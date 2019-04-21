@@ -92,7 +92,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
             }
             do {
                 try self.addAudioInputsAndOutputs()
-                audioEncodingTarget.activateAudioTrack()
+                try audioEncodingTarget.activateAudioTrack()
             } catch {
                 print("ERROR: Could not connect audio target with error: \(error)")
             }

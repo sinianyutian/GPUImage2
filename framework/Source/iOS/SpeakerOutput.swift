@@ -93,7 +93,7 @@ public class SpeakerOutput: AudioEncodingTarget {
     // MARK: -
     // MARK: AudioEncodingTarget protocol
     
-    public func activateAudioTrack() {
+    public func activateAudioTrack() throws {
         if(changesAudioSession) {
             do {
                 try AVAudioSession.sharedInstance().setCategory(AVAudioSession.Category.ambient)

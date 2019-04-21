@@ -20,7 +20,11 @@ public class MovieInput: ImageSource {
             guard let audioEncodingTarget = audioEncodingTarget else {
                 return
             }
-            audioEncodingTarget.activateAudioTrack()
+            do {
+                try audioEncodingTarget.activateAudioTrack()
+            } catch {
+                print("ERROR: Could not connect audio target with error: \(error)")
+            }
             
             // Call enableSynchronizedEncoding() again if they didn't set the audioEncodingTarget before setting synchronizedMovieOutput.
             if(synchronizedMovieOutput != nil) { self.enableSynchronizedEncoding() }

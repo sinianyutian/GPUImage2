@@ -1,7 +1,7 @@
 import AVFoundation
 
 public protocol AudioEncodingTarget {
-    func activateAudioTrack()
+    func activateAudioTrack() throws
     func processAudioBuffer(_ sampleBuffer:CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool)
     // Note: This is not used for synchronized encoding.
     func readyForNextAudioBuffer() -> Bool
@@ -14,6 +14,7 @@ public protocol MovieOutputDelegate: class {
 public enum MovieOutputError: Error, CustomStringConvertible {
     case startWritingError(assetWriterError: Error?)
     case pixelBufferPoolNilError
+    case activeAudioTrackError
     
     public var errorDescription: String {
         switch self {
@@ -21,6 +22,8 @@ public enum MovieOutputError: Error, CustomStringConvertible {
             return "Could not start asset writer: \(String(describing: assetWriterError))"
         case .pixelBufferPoolNilError:
             return "Asset writer pixel buffer pool was nil. Make sure that your output file doesn't already exist."
+        case .activeAudioTrackError:
+            return "cannot active audio track when assetWriter status is not 0"
         }
     }
     
@@ -421,7 +424,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     // MARK: -
     // MARK: Audio support
     
-    public func activateAudioTrack() {
+    public func activateAudioTrack() throws {
+        guard assetWriter.status == .unknown else {
+            throw MovieOutputError.activeAudioTrackError
+        }
         assetWriterAudioInput = AVAssetWriterInput(mediaType:.audio, outputSettings:self.audioSettings, sourceFormatHint:self.audioSourceFormatHint)
 
         assetWriter.add(assetWriterAudioInput!)
