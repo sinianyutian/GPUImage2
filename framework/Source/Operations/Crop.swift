@@ -28,8 +28,15 @@ open class Crop: BasicOperation {
             normalizedOffsetFromOrigin  = Position.zero
         }
         let normalizedCropSize = Size(width:Float(finalCropSize.width) / Float(inputSize.width), height:Float(finalCropSize.height) / Float(inputSize.height))
-        
-        renderFramebuffer = sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation:.portrait, size:finalCropSize, stencil:false)
+
+        let bufferSize:GLSize
+        if abs(abs(Double(inputSize.width)/Double(inputSize.height)) - abs(Double(finalCropSize.width)/Double(finalCropSize.height))) < 0.01 {
+            bufferSize = inputSize
+        } else {
+            bufferSize = finalCropSize
+        }
+
+        renderFramebuffer = sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation:.portrait, size:bufferSize, stencil:false)
         
         let textureProperties = InputTextureProperties(textureCoordinates:inputFramebuffer.orientation.rotationNeededForOrientation(.portrait).croppedTextureCoordinates(offsetFromOrigin:normalizedOffsetFromOrigin, cropSize:normalizedCropSize), texture:inputFramebuffer.texture)
         
