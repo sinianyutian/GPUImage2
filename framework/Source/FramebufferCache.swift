@@ -27,7 +27,7 @@ public class FramebufferCache {
         let framebuffer:Framebuffer
         
         if(framebufferCache.count > 20) {
-            print("Warning: Runaway framebuffer cache with size: \(framebufferCache.count)")
+            print("Warning: Runaway framebuffer cache with size: \(framebufferCache.count), glsize: \(size)")
         }
         
         if ((framebufferCache[hash]?.count ?? -1) > 0) {
