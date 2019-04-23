@@ -29,14 +29,13 @@ final class QuickshotFilter: OperationGroup {
     }
 
     func _updateAngle(_ inputAngle: Float) {
-        // TODO: support more angle
-        if inputAngle <= 0 {
+        if inputAngle == 0 {
             crop.locationOfCropInPixels = nil
             crop.cropSizeInPixels = nil
             transform.transform = .identity
             return
         }
-        let angle = min(inputAngle, Float.pi / 3.0)
+        let angle = abs(inputAngle)
 
         // TODO: use real w/h
         let w0: Float = 480.0
@@ -60,14 +59,17 @@ final class QuickshotFilter: OperationGroup {
         let g = c / cos(angle) * cos(A)
         let h = a / sin(B) * sin(angle) - g
         let i = tan(angle) * f
+        let j = d / sin(B) * sin(A)
+        let k = w0 - h - g - j
+        let l = f / tan(angle)
 
-        let x = h - i
+        let x = inputAngle > 0 ? h - i : k - l
         let y = f
 
         crop.locationOfCropInPixels = Position(Float(x), Float(y))
         crop.cropSizeInPixels = Size(width: Float(w1), height: Float(h1))
 
         print("angle: \(Int(angle/Float.pi * 180)), x: \(x), y: \(y), size: \(w1)*\(h1)")
-        transform.transform = Matrix4x4(CGAffineTransform(rotationAngle: CGFloat(angle)))
+        transform.transform = Matrix4x4(CGAffineTransform(rotationAngle: CGFloat(inputAngle)))
     }
 }
