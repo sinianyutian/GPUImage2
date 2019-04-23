@@ -26,7 +26,12 @@ final class MotionDetector {
             return 0
         }
 
-        return .pi - atan2(gravity.x, gravity.y)
+        let a = atan2(gravity.x, gravity.y)
+        if a  > 0 {
+            return .pi - a
+        } else {
+            return -.pi - a
+        }
     }
 
     init() {

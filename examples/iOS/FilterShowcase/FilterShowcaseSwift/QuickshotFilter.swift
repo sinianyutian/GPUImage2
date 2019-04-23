@@ -28,6 +28,12 @@ final class QuickshotFilter: OperationGroup {
         }
     }
 
+    override func newFramebufferAvailable(_ framebuffer: Framebuffer, fromSourceIndex: UInt) {
+        _updateAngle(Float(MotionDetector.shared.rotation))
+
+        super.newFramebufferAvailable(framebuffer, fromSourceIndex: fromSourceIndex)
+    }
+
     func _updateAngle(_ inputAngle: Float) {
         if inputAngle == 0 {
             crop.locationOfCropInPixels = nil
