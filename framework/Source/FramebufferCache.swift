@@ -29,14 +29,14 @@ public class FramebufferCache {
         if(framebufferCache.count > 20) {
             print("Warning: Runaway framebuffer cache with size: \(framebufferCache.count), glsize: \(size)")
         }
-        
-        if ((framebufferCache[hash]?.count ?? -1) > 0) {
-            //print("Restoring previous framebuffer")
+
+        if let framebufferCacheCount = framebufferCache[hash]?.count, framebufferCacheCount > 0 {
+            print("Restoring previous framebuffer, framebufferCacheCount: \(framebufferCacheCount)")
             framebuffer = framebufferCache[hash]!.removeLast()
             framebuffer.orientation = orientation
         } else {
             do {
-                //debugPrint("Generating new framebuffer at size: \(size)")
+                debugPrint("Generating new framebuffer at size: \(size), orientation:\(orientation), textureOnly:\(textureOnly), minFilter:\(minFilter), magFilter:\(magFilter), ")
 
                 framebuffer = try Framebuffer(context:context, orientation:orientation, size:size, textureOnly:textureOnly, minFilter:minFilter, magFilter:magFilter, wrapS:wrapS, wrapT:wrapT, internalFormat:internalFormat, format:format, type:type, stencil:stencil)
                 framebuffer.cache = self
