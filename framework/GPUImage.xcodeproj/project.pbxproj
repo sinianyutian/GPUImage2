@@ -361,6 +361,8 @@
 		BCFF46FC1CBAF85000A0C521 /* TransformOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCFF46FB1CBAF85000A0C521 /* TransformOperation.swift */; };
 		BCFF46FE1CBB0C1F00A0C521 /* AverageColorExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCFF46FD1CBB0C1F00A0C521 /* AverageColorExtractor.swift */; };
 		BCFF47081CBB443B00A0C521 /* CameraConversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCFF47071CBB443B00A0C521 /* CameraConversion.swift */; };
+		D1D81C8E226EE95D00013E68 /* ResizeCrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D81C8D226EE95C00013E68 /* ResizeCrop.swift */; };
+		D1D81C8F226EE99000013E68 /* ResizeCrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D81C8D226EE95C00013E68 /* ResizeCrop.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -705,6 +707,7 @@
 		BCFF46FF1CBB0D8900A0C521 /* AverageColor_GL.fsh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.glsl; name = AverageColor_GL.fsh; path = Source/Operations/Shaders/AverageColor_GL.fsh; sourceTree = "<group>"; };
 		BCFF47001CBB0D8900A0C521 /* AverageColor.vsh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.glsl; name = AverageColor.vsh; path = Source/Operations/Shaders/AverageColor.vsh; sourceTree = "<group>"; };
 		BCFF47071CBB443B00A0C521 /* CameraConversion.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = CameraConversion.swift; path = Source/CameraConversion.swift; sourceTree = "<group>"; };
+		D1D81C8D226EE95C00013E68 /* ResizeCrop.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = ResizeCrop.swift; path = Source/Operations/ResizeCrop.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -922,6 +925,7 @@
 				BCFF46AD1CB7554700A0C521 /* AdaptiveThreshold.swift */,
 				BCFF46AF1CB7561D00A0C521 /* AdaptiveThreshold_GL.fsh */,
 				BC2C48031CB80E860085E4BC /* Crop.swift */,
+				D1D81C8D226EE95C00013E68 /* ResizeCrop.swift */,
 				BCFF46C51CB968DE00A0C521 /* ImageBuffer.swift */,
 				BCFF46C71CB96AB100A0C521 /* LowPassFilter.swift */,
 				BCFF46C91CB96BD700A0C521 /* HighPassFilter.swift */,
@@ -1350,6 +1354,7 @@
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				English,
 				en,
 			);
 			mainGroup = BC6E7CA11C39A9D8006DF678;
@@ -1438,6 +1443,7 @@
 				BCFF46E21CBADB3E00A0C521 /* SingleComponentGaussianBlur.swift in Sources */,
 				BC7FD0F71CB0620E00037949 /* ChromaKeyBlend.swift in Sources */,
 				BC7FD0861CA62E1100037949 /* BrightnessAdjustment.swift in Sources */,
+				D1D81C8E226EE95D00013E68 /* ResizeCrop.swift in Sources */,
 				BC7FD1631CB17C8D00037949 /* ImageOrientation.swift in Sources */,
 				BC9673411C8B897100FB64C2 /* FramebufferCache.swift in Sources */,
 				BC7FD0BB1CA7799B00037949 /* Halftone.swift in Sources */,
@@ -1707,6 +1713,7 @@
 				BC9E35CA1E5257F100B8604F /* LightenBlend.swift in Sources */,
 				BC9E35291E524D5B00B8604F /* MovieOutput.swift in Sources */,
 				BC9E356B1E5256C500B8604F /* ColorInversion.swift in Sources */,
+				D1D81C8F226EE99000013E68 /* ResizeCrop.swift in Sources */,
 				BC9E35621E5256A500B8604F /* OperationGroup.swift in Sources */,
 				BC9E35381E524D7E00B8604F /* OpenGLRendering.swift in Sources */,
 				BC9E35B41E5257A900B8604F /* ToonFilter.swift in Sources */,
