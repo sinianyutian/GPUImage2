@@ -165,6 +165,16 @@ let filterOperations: Array<FilterOperationInterface> = [
         filterOperationType:.singleInput
     ),
     FilterOperation(
+        filter:{ResizeCrop()},
+        listName:"ResizeCrop",
+        titleName:"ResizeCrop",
+        sliderConfiguration:.enabled(minimumValue:240.0, maximumValue:480.0, initialValue:240.0),
+        sliderUpdateCallback:{(filter, sliderValue) in
+            filter.cropSizeInPixels = Size(width:480.0, height:sliderValue)
+    },
+        filterOperationType:.singleInput
+    ),
+    FilterOperation(
         filter:{Luminance()},
         listName:"Masking",
         titleName:"Mask Example",
