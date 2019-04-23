@@ -87,9 +87,11 @@ class FilterDisplayViewController: UIViewController, UISplitViewControllerDelega
         super.viewDidLoad()
         self.configureView()
 
-        MotionDetector.shared.start { [weak self] rotation in
-            self?.filterSlider?.value = Float(rotation)
-            self?.updateSliderValue()
+        if filterOperation?.titleName.contains("QuickShot") == true {
+            MotionDetector.shared.start { [weak self] rotation in
+                self?.filterSlider?.value = Float(rotation)
+                self?.updateSliderValue()
+            }
         }
     }
 
