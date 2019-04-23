@@ -167,6 +167,36 @@ let filterOperations: Array<FilterOperationInterface> = [
         filterOperationType:.singleInput
     ),
     FilterOperation(
+        filter:{QuickshotOpeartion(rotationProvider: { return Float(MotionDetector.shared.rotation) })},
+        listName:"QuickShotOpeartion",
+        titleName:"QuickShotOpeartion",
+        sliderConfiguration:.enabled(minimumValue:-3.14/2, maximumValue:3.14/2, initialValue:3.14/4),
+        sliderUpdateCallback:{(filter, sliderValue) in
+            filter.transform = Matrix4x4(CGAffineTransform(rotationAngle:CGFloat(sliderValue)))
+    },
+        filterOperationType:.singleInput
+    ),
+//    FilterOperation(
+//        filter:{QuickshotOpeartion(rotationProvider: { return Float(MotionDetector.shared.rotation) })},
+//        listName:"4Quickshot Transform",
+//        titleName:"4Quickshot Transform",
+//        sliderConfiguration:.enabled(minimumValue:-3.14/2, maximumValue:3.14/2, initialValue:3.14/4),
+//        sliderUpdateCallback:{(filter, sliderValue) in
+//            filter.transform = Matrix4x4(CGAffineTransform(rotationAngle:CGFloat(sliderValue)))
+//    },
+//        filterOperationType:.singleInput
+//    ),
+//    FilterOperation(
+//        filter:{QuickshotOpeartion()},
+//        listName:"5Quickshot crop",
+//        titleName:"5Quickshot crop",
+//        sliderConfiguration:.enabled(minimumValue:240.0, maximumValue:480.0, initialValue:240.0),
+//        sliderUpdateCallback:{(filter, sliderValue) in
+//            filter.cropSizeInPixels = Size(width:480.0, height:sliderValue)
+//    },
+//        filterOperationType:.singleInput
+//    ),
+    FilterOperation(
         filter:{TransformOperation()},
         listName:"Transform (2-D)",
         titleName:"Transform (2-D)",

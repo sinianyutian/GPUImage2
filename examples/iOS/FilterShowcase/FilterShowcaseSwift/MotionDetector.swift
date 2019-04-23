@@ -20,6 +20,15 @@ final class MotionDetector {
     }()
     lazy private var manager = CMMotionManager()
 
+    // for potential pull data
+    var rotation: Double {
+        guard let gravity = manager.deviceMotion?.gravity else {
+            return 0
+        }
+
+        return .pi - atan2(gravity.x, gravity.y)
+    }
+
     init() {
 
     }
@@ -30,19 +39,20 @@ final class MotionDetector {
         }
 
         manager.deviceMotionUpdateInterval = 0.01
-        manager.startDeviceMotionUpdates(to: queue) { (data, error) in
-
-            guard let data = data, error == nil else {
-                return
-            }
-
-            let rotation = .pi - atan2(data.gravity.x, data.gravity.y)
-
-            print(String(format: "rotation: %.2f, (%.2f, %.2f)", rotation,  data.gravity.x, data.gravity.y))
-            DispatchQueue.main.async {
-                callback(rotation)
-            }
-        }
+        manager.startDeviceMotionUpdates()
+//        manager.startDeviceMotionUpdates(to: queue) { (data, error) in
+//
+//            guard let data = data, error == nil else {
+//                return
+//            }
+//
+//            let rotation = .pi - atan2(data.gravity.x, data.gravity.y)
+//
+//            print(String(format: "rotation: %.2f, (%.2f, %.2f)", rotation,  data.gravity.x, data.gravity.y))
+//            DispatchQueue.main.async {
+//                callback(rotation)
+//            }
+//        }
     }
 
     func stop() {
