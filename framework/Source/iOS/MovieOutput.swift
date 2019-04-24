@@ -425,7 +425,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     // MARK: Audio support
     
     public func activateAudioTrack() throws {
-        guard assetWriter.status == .unknown else {
+        guard assetWriter.status != .completed else {
             throw MovieOutputError.activeAudioTrackError
         }
         assetWriterAudioInput = AVAssetWriterInput(mediaType:.audio, outputSettings:self.audioSettings, sourceFormatHint:self.audioSourceFormatHint)
