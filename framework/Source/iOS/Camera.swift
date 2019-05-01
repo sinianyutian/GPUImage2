@@ -301,16 +301,22 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         let notFrameDrop = dontDropFrames
         
         guard notFrameDrop || (frameRenderingSemaphore.wait(timeout:DispatchTime.now()) == DispatchTimeoutResult.success) else { return }
-    
-        let startTime = CFAbsoluteTimeGetCurrent()
         
-        let cameraFrame = CMSampleBufferGetImageBuffer(sampleBuffer)!
-        let bufferWidth = CVPixelBufferGetWidth(cameraFrame)
-        let bufferHeight = CVPixelBufferGetHeight(cameraFrame)
-        let currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        
-        CVPixelBufferLockBaseAddress(cameraFrame, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
         sharedImageProcessingContext.runOperationAsynchronously{
+            defer {
+                if !notFrameDrop {
+                    self.frameRenderingSemaphore.signal()
+                }
+            }
+            let startTime = CFAbsoluteTimeGetCurrent()
+            guard let cameraFrame = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+                print("Warning: cannot get imageBuffer")
+                return
+            }
+            let bufferWidth = CVPixelBufferGetWidth(cameraFrame)
+            let bufferHeight = CVPixelBufferGetHeight(cameraFrame)
+            let currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            CVPixelBufferLockBaseAddress(cameraFrame, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
             let cameraFramebuffer:Framebuffer
             
             self.delegate?.didCaptureBuffer(sampleBuffer)
@@ -392,10 +398,6 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
                 }
                 
                 self.framesSinceLastCheck += 1
-            }
-
-            if !notFrameDrop {
-                self.frameRenderingSemaphore.signal()
             }
         }
     }
