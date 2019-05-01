@@ -9,6 +9,12 @@ public protocol AudioEncodingTarget {
 
 public protocol MovieOutputDelegate: class {
     func movieOutputDidStartWriting(_ movieOutput: MovieOutput, at time: CMTime)
+    func movieOutputWriterError(_ movieOutput: MovieOutput, error: Error)
+}
+
+public extension MovieOutputDelegate {
+    func movieOutputDidStartWriting(_ movieOutput: MovieOutput, at time: CMTime) {}
+    func movieOutputWriterError(_ movieOutput: MovieOutput, error: Error) {}
 }
 
 public enum MovieOutputError: Error, CustomStringConvertible {
@@ -49,6 +55,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     private var isRecording = false
     var videoEncodingIsFinished = false
     var audioEncodingIsFinished = false
+    private var startFrameTime: CMTime?
+    public var recordedDuration: CMTime?
     private var previousFrameTime: CMTime?
     var encodingLiveVideo:Bool {
         didSet {
@@ -59,6 +67,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     var pendingAudioBuffers = [CMSampleBuffer]()
     public private(set) var pixelBuffer:CVPixelBuffer? = nil
     public var dropFirstFrames: Int = 0
+    public var waitUtilDataIsReadyForLiveVideo = false
     let keepLastPixelBuffer: Bool
     var renderFramebuffer:Framebuffer!
     
@@ -69,9 +78,14 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     var synchronizedEncodingDebug = false
     var totalFramesAppended:Int = 0
+    private var observations = [NSKeyValueObservation]()
     
     deinit {
+        observations.forEach { $0.invalidate() }
         debugPrint("movie output deinit \(assetWriter.outputURL)")
+    }
+    var shouldWaitForEncoding: Bool {
+        return !encodingLiveVideo || waitUtilDataIsReadyForLiveVideo
     }
     
     public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil, keepLastPixelBuffer: Bool = false) throws {
@@ -140,6 +154,17 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         // we will be able to accept framebuffers but the ones that piled up will come in too quickly resulting in most being dropped.
         let block = { () -> Void in
             do {
+                guard self.assetWriter.status != .cancelled else {
+                    completionCallback?(false, MovieOutputError.startWritingError(assetWriterError: nil))
+                    return
+                }
+                
+                let observation = self.assetWriter.observe(\.error) { [weak self] writer, _ in
+                    guard let self = self, let error = writer.error else { return }
+                    self.delegate?.movieOutputWriterError(self, error: error)
+                }
+                self.observations.append(observation)
+                
                 var success = false
                 try NSObject.catchException {
                     success = self.assetWriter.startWriting()
@@ -202,6 +227,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             }
             self.pendingAudioBuffers.removeAll()
             
+            if let lastFrame = self.previousFrameTime, let startFrame = self.startFrameTime {
+                self.recordedDuration = lastFrame - startFrame
+            }
             self.assetWriter.finishWriting {
                 completionCallback?()
             }
@@ -262,12 +290,12 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             self.previousFrameTime = frameTime
 
-            guard (self.assetWriterVideoInput.isReadyForMoreMediaData || !self.encodingLiveVideo) else {
+            guard (self.assetWriterVideoInput.isReadyForMoreMediaData || self.shouldWaitForEncoding) else {
                 print("Had to drop a frame at time \(frameTime)")
                 return
             }
             
-            while(!self.assetWriterVideoInput.isReadyForMoreMediaData && !self.encodingLiveVideo && !self.videoEncodingIsFinished) {
+            while(!self.assetWriterVideoInput.isReadyForMoreMediaData && self.shouldWaitForEncoding && !self.videoEncodingIsFinished) {
                 self.synchronizedEncodingDebugPrint("Video waiting...")
                 // Better to poll isReadyForMoreMediaData often since when it does become true
                 // we don't want to risk letting framebuffers pile up in between poll intervals.
@@ -378,11 +406,12 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
                 self.assetWriter.startSession(atSourceTime: frameTime)
                 self.delegate?.movieOutputDidStartWriting(self, at: frameTime)
+                self.startFrameTime = frameTime
             }
             
             self.previousFrameTime = frameTime
             
-            guard (self.assetWriterVideoInput.isReadyForMoreMediaData || !self.encodingLiveVideo) else {
+            guard (self.assetWriterVideoInput.isReadyForMoreMediaData || self.shouldWaitForEncoding) else {
                 print("Had to drop a frame at time \(frameTime)")
                 return
             }
@@ -392,7 +421,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 return
             }
             
-            while(!self.assetWriterVideoInput.isReadyForMoreMediaData && !self.encodingLiveVideo && !self.videoEncodingIsFinished) {
+            while(!self.assetWriterVideoInput.isReadyForMoreMediaData && self.shouldWaitForEncoding && !self.videoEncodingIsFinished) {
                 self.synchronizedEncodingDebugPrint("Video waiting...")
                 // Better to poll isReadyForMoreMediaData often since when it does become true
                 // we don't want to risk letting framebuffers pile up in between poll intervals.
@@ -453,12 +482,12 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             let currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
             
-            guard (assetWriterAudioInput.isReadyForMoreMediaData || !self.encodingLiveVideo) else {
+            guard (assetWriterAudioInput.isReadyForMoreMediaData || self.shouldWaitForEncoding) else {
                 print("Had to drop a audio sample at time \(currentSampleTime)")
                 return
             }
             
-            while(!assetWriterAudioInput.isReadyForMoreMediaData && !self.encodingLiveVideo && !self.audioEncodingIsFinished) {
+            while(!assetWriterAudioInput.isReadyForMoreMediaData && self.shouldWaitForEncoding && !self.audioEncodingIsFinished) {
                 self.synchronizedEncodingDebugPrint("Audio waiting...")
                 usleep(100000)
             }
