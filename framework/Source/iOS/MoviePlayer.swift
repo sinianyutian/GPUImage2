@@ -55,7 +55,6 @@ public class MoviePlayer: AVPlayer, ImageSource {
         return status == .readyToPlay
     }
     
-    var movieFramebuffer: Framebuffer?
     var framebufferUserInfo: [AnyHashable:Any]?
     var observations = [NSKeyValueObservation]()
     
@@ -101,7 +100,6 @@ public class MoviePlayer: AVPlayer, ImageSource {
     deinit {
         debugPrint("movie player deinit \(String(describing: asset))")
         stop()
-        movieFramebuffer?.unlock()
         _removePlayerObservers()
     }
     
@@ -127,6 +125,9 @@ public class MoviePlayer: AVPlayer, ImageSource {
             item.audioTimePitchAlgorithm = .varispeed
             self.videoOutput = videoOutput
             _setupPlayerObservers()
+        } else {
+            self.videoOutput = nil
+            _removePlayerObservers()
         }
         
         super.replaceCurrentItem(with: item)
@@ -220,14 +221,6 @@ public class MoviePlayer: AVPlayer, ImageSource {
         // Not needed for movie inputs
     }
     
-    func transmitPreviousFrame() {
-        sharedImageProcessingContext.runOperationAsynchronously {
-            if let movieFramebuffer = self.movieFramebuffer {
-                self.updateTargetsWithFramebuffer(movieFramebuffer)
-            }
-        }
-    }
-    
     public func addTimeObserver(seconds: TimeInterval, callback: @escaping MoviePlayerTimeObserverCallback) -> MoviePlayerTimeObserver {
         let timeObserver = MoviePlayerTimeObserver(targetTime: seconds, callback: callback)
         totalTimeObservers.append(timeObserver)
@@ -243,6 +236,13 @@ public class MoviePlayer: AVPlayer, ImageSource {
         }
         timeObserversQueue.removeAll { (observer) -> Bool in
             return observer.observerID == timeObserver.observerID
+        }
+    }
+    
+    public func removeAllTimeObservers() {
+        sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
+            self?.timeObserversQueue.removeAll()
+            self?.totalTimeObservers.removeAll()
         }
     }
 }
@@ -282,7 +282,7 @@ private extension MoviePlayer {
     func _resetTimeObservers() {
         timeObserversQueue.removeAll()
         for observer in totalTimeObservers {
-            guard observer.targetTime >= startTime ?? 0 && observer.targetTime <= endTime ?? assetDuration else {
+            guard observer.targetTime >= (startTime ?? 0) && observer.targetTime <= endTime ?? assetDuration else {
                 continue
             }
             timeObserversQueue.append(observer)
@@ -389,7 +389,6 @@ private extension MoviePlayer {
             return
         }
         
-        movieFramebuffer?.unlock()
         let framebuffer = sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation: .portrait, size: GLSize(width: GLint(bufferWidth), height: GLint(bufferHeight)), textureOnly: false)
         framebuffer.lock()
         
@@ -402,7 +401,6 @@ private extension MoviePlayer {
         
         framebuffer.timingStyle = .videoFrame(timestamp: Timestamp(sampleTime))
         framebuffer.userInfo = framebufferUserInfo
-        movieFramebuffer = framebuffer
         
         updateTargetsWithFramebuffer(framebuffer)
         
