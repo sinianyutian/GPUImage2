@@ -24,6 +24,7 @@ public class RenderView:UIView, ImageConsumer {
     var displayFramebuffer:GLuint?
     var displayRenderbuffer:GLuint?
     var backingSize = GLSize(width:0, height:0)
+    private var isAppForeground: Bool = true
     
     private lazy var displayShader:ShaderProgram = {
         return sharedImageProcessingContext.passthroughShader
@@ -67,6 +68,13 @@ public class RenderView:UIView, ImageConsumer {
         eaglLayer.drawableProperties = [kEAGLDrawablePropertyRetainedBacking: NSNumber(value:false), kEAGLDrawablePropertyColorFormat: kEAGLColorFormatRGBA8]
         eaglLayer.contentsGravity = CALayerContentsGravity.resizeAspectFill // Just for safety to prevent distortion
         
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.isAppForeground = true
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.isAppForeground = false
+        }
+        
         self.internalLayer = eaglLayer
     }
     
@@ -77,6 +85,9 @@ public class RenderView:UIView, ImageConsumer {
     }
     
     func createDisplayFramebuffer() -> Bool {
+        // Fix crash when calling OpenGL when app is not foreground
+        guard isAppForeground else { return false }
+        
         var newDisplayFramebuffer:GLuint = 0
         glGenFramebuffers(1, &newDisplayFramebuffer)
         displayFramebuffer = newDisplayFramebuffer
@@ -157,6 +168,9 @@ public class RenderView:UIView, ImageConsumer {
         }
         
         let work: () -> Void = {
+            // Fix crash when calling OpenGL when app is not foreground
+            guard self.isAppForeground else { return }
+            
             if (self.displayFramebuffer == nil && !self.createDisplayFramebuffer()) {
                 cleanup()
                 // Bail if we couldn't successfully create the displayFramebuffer
