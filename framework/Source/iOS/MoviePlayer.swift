@@ -390,7 +390,6 @@ private extension MoviePlayer {
         }
         
         let framebuffer = sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation: .portrait, size: GLSize(width: GLint(bufferWidth), height: GLint(bufferHeight)), textureOnly: false)
-        framebuffer.lock()
         
         convertYUVToRGB(shader: yuvConversionShader,
                         luminanceFramebuffer: luminanceFramebuffer,
