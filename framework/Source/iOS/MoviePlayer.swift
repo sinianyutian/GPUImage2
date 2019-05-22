@@ -39,7 +39,7 @@ public class MoviePlayer: AVPlayer, ImageSource {
     var videoOutput: AVPlayerItemVideoOutput?
     var displayLink: CADisplayLink?
     
-    let yuvConversionShader: ShaderProgram
+    var yuvConversionShader: ShaderProgram?
     
     var totalTimeObservers = [MoviePlayerTimeObserver]()
     var timeObserversQueue = [MoviePlayerTimeObserver]()
@@ -76,25 +76,19 @@ public class MoviePlayer: AVPlayer, ImageSource {
     
     public override init() {
         debugPrint("movie player init")
-        self.yuvConversionShader = crashOnShaderCompileFailure("MoviePlayer") {
-            try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(2),
-                                                                    fragmentShader: YUVConversionFullRangeFragmentShader)
-        }
         // Make sure player it intialized on the main thread, or it might cause KVO crash
         assert(Thread.isMainThread)
         super.init()
+        _setupShader()
     }
     
     override public init(playerItem item: AVPlayerItem?) {
         self.playerItem = item
-        self.yuvConversionShader = crashOnShaderCompileFailure("MoviePlayer") {
-            try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(2),
-                                                                    fragmentShader: YUVConversionFullRangeFragmentShader)
-        }
         // Make sure player it intialized on the main thread, or it might cause KVO crash
         assert(Thread.isMainThread)
         super.init(playerItem: item)
         replaceCurrentItem(with: item)
+        _setupShader()
     }
     
     deinit {
@@ -248,6 +242,15 @@ public class MoviePlayer: AVPlayer, ImageSource {
 }
 
 private extension MoviePlayer {
+    func _setupShader() {
+        sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
+            self?.yuvConversionShader = crashOnShaderCompileFailure("MoviePlayer") {
+                try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(2),
+                                                                        fragmentShader: YUVConversionFullRangeFragmentShader)
+            }
+        }
+    }
+    
     func _setupDisplayLinkIfNeeded() {
         if displayLink == nil {
             displayLink = CADisplayLink(target: self, selector: #selector(displayLinkCallback))
@@ -325,6 +328,10 @@ private extension MoviePlayer {
     // MARK: Internal processing functions
     
     func _process(movieFrame: CVPixelBuffer, with sampleTime: CMTime) {
+        guard let yuvConversionShader = yuvConversionShader else {
+            debugPrint("ERROR! yuvConversionShader hasn't been setup before starting")
+            return
+        }
         delegate?.moviePlayerDidReadPixelBuffer(movieFrame, time: CMTimeGetSeconds(sampleTime))
         
         let bufferHeight = CVPixelBufferGetHeight(movieFrame)
