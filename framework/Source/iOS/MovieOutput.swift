@@ -285,6 +285,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             if (self.previousFrameTime == nil) {
                 // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
                 self.assetWriter.startSession(atSourceTime: frameTime)
+                self.startFrameTime = frameTime
                 self.delegate?.movieOutputDidStartWriting(self, at: frameTime)
             }
             
@@ -405,8 +406,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             if (self.previousFrameTime == nil) {
                 // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
                 self.assetWriter.startSession(atSourceTime: frameTime)
-                self.delegate?.movieOutputDidStartWriting(self, at: frameTime)
                 self.startFrameTime = frameTime
+                self.delegate?.movieOutputDidStartWriting(self, at: frameTime)
             }
             
             self.previousFrameTime = frameTime
