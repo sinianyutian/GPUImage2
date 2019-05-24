@@ -39,7 +39,7 @@ public enum MovieOutputError: Error, CustomStringConvertible {
 }
 
 public class MovieOutput: ImageConsumer, AudioEncodingTarget {
-    
+    private static let assetWriterQueue = DispatchQueue(label: "com.GPUImage2.MovieOutput.assetWriterQueue", qos: .userInitiated)
     public let sources = SourceContainer()
     public let maximumInputs:UInt = 1
     
@@ -201,12 +201,12 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         if sync {
             block()
         } else {
-            DispatchQueue.global(qos: .userInitiated).async(execute: block)
+            MovieOutput.assetWriterQueue.async(execute: block)
         }
     }
     
     public func finishRecording(_ completionCallback:(() -> Void)? = nil) {
-        movieProcessingContext.runOperationAsynchronously{
+        MovieOutput.assetWriterQueue.async {
             guard self.isRecording,
                 self.assetWriter.status == .writing else {
                     completionCallback?()
@@ -239,7 +239,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     
     public func cancelRecording(_ completionCallback:(() -> Void)? = nil) {
-        movieProcessingContext.runOperationAsynchronously{
+        MovieOutput.assetWriterQueue.async {
             guard self.isRecording,
                 self.assetWriter.status == .writing else {
                     completionCallback?()
