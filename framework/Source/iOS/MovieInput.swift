@@ -75,6 +75,7 @@ public class MovieInput: ImageSource {
     var audioInputStatusObserver:NSKeyValueObservation?
     
     public var useRealtimeThreads = false
+    public var transcodingOnly = false
     var timebaseInfo = mach_timebase_info_data_t()
     var currentThread:Thread?
     
@@ -330,6 +331,11 @@ public class MovieInput: ImageSource {
         var duration = self.asset.duration // Only used for the progress block so its acuracy is not critical
         self.synchronizedEncodingDebugPrint("Process video frame input. Time:\(CMTimeGetSeconds(currentSampleTime))")
         
+        if transcodingOnly, let movieOutput = synchronizedMovieOutput {
+            movieOutput.processVideoBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: false)
+            return
+        }
+        
         self.currentTime = currentSampleTime
         
         if let startTime = self.startTime {
@@ -388,7 +394,7 @@ public class MovieInput: ImageSource {
         
         self.synchronizedEncodingDebugPrint("Process audio sample input. Time:\(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)))")
         
-        self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: true)
+        self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: !transcodingOnly)
     }
     
     func process(movieFrame frame:CMSampleBuffer) {
