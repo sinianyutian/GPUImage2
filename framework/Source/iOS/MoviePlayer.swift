@@ -131,7 +131,11 @@ public class MoviePlayer: AVPlayer, ImageSource {
     // MARK: Playback control
     
     override public func play() {
-        start()
+        if displayLink == nil {
+            start()
+        } else {
+            resume()
+        }
     }
     
     override public func playImmediately(atRate rate: Float) {
