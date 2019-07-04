@@ -252,3 +252,28 @@ public extension Size {
         return GLint(round(Double(self.height)))
     }
 }
+
+#if DEBUG
+public extension Framebuffer {
+    func debugUIImage() -> UIImage? {
+        let bufferSize = Int(size.width * size.height * 4)
+        guard let buffer = NSMutableData(capacity: bufferSize) else { return nil }
+        glReadPixels(0, 0, size.width, size.height, GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), buffer.mutableBytes)
+        let dataProvider = CGDataProvider(dataInfo: nil, data: buffer.mutableBytes, size: bufferSize) {_,_,_ in }
+        guard let provider = dataProvider else { return nil }
+        let cgImage = CGImage(width: Int(size.width),
+                            height: Int(size.height),
+                            bitsPerComponent: 8,
+                            bitsPerPixel: 32,
+                            bytesPerRow: 4 * Int(size.width),
+                            space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: .byteOrder32Big,
+                            provider: provider,
+                            decode: nil,
+                            shouldInterpolate: false,
+                            intent: .defaultIntent)
+        guard let cgImg = cgImage else { return nil }
+        return UIImage(cgImage: cgImg)
+    }
+}
+#endif
