@@ -39,7 +39,9 @@ public class MoviePlayer: AVPlayer, ImageSource {
     var videoOutput: AVPlayerItemVideoOutput?
     var displayLink: CADisplayLink?
     
-    var yuvConversionShader: ShaderProgram?
+    lazy var yuvConversionShader: ShaderProgram? = {
+        _setupShader()
+    }()
     
     var totalTimeObservers = [MoviePlayerTimeObserver]()
     var timeObserversQueue = [MoviePlayerTimeObserver]()
@@ -79,7 +81,6 @@ public class MoviePlayer: AVPlayer, ImageSource {
         // Make sure player it intialized on the main thread, or it might cause KVO crash
         assert(Thread.isMainThread)
         super.init()
-        _setupShader()
     }
     
     override public init(playerItem item: AVPlayerItem?) {
@@ -88,7 +89,6 @@ public class MoviePlayer: AVPlayer, ImageSource {
         assert(Thread.isMainThread)
         super.init(playerItem: item)
         replaceCurrentItem(with: item)
-        _setupShader()
     }
     
     deinit {
@@ -246,13 +246,15 @@ public class MoviePlayer: AVPlayer, ImageSource {
 }
 
 private extension MoviePlayer {
-    func _setupShader() {
-        sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
-            self?.yuvConversionShader = crashOnShaderCompileFailure("MoviePlayer") {
+    func _setupShader() -> ShaderProgram? {
+        var yuvConversionShader: ShaderProgram?
+        sharedImageProcessingContext.runOperationSynchronously {
+            yuvConversionShader = crashOnShaderCompileFailure("MoviePlayer") {
                 try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(2),
                                                                         fragmentShader: YUVConversionFullRangeFragmentShader)
             }
         }
+        return yuvConversionShader
     }
     
     func _setupDisplayLinkIfNeeded() {
