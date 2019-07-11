@@ -56,6 +56,10 @@ public class MoviePlayer: AVPlayer, ImageSource {
     public var isReadyToPlay: Bool {
         return status == .readyToPlay
     }
+    public var videoOrientation: ImageOrientation {
+        guard let asset = asset else { return .portrait }
+        return asset.imageOrientation ?? .portrait
+    }
     
     var framebufferUserInfo: [AnyHashable:Any]?
     var observations = [NSKeyValueObservation]()
@@ -465,6 +469,24 @@ private extension MoviePlayer {
             DispatchQueue.main.async {
                 lastObserver.callback(currentTime)
             }
+        }
+    }
+}
+
+public extension AVAsset {
+    var imageOrientation: ImageOrientation? {
+        guard let videoTrack = tracks(withMediaType: AVMediaType.video).first else {
+            return nil
+        }
+        let trackTransform = videoTrack.preferredTransform
+        switch (trackTransform.a, trackTransform.b, trackTransform.c, trackTransform.d) {
+        case (1, 0, 0, 1): return .portrait
+        case (1, 0, 0, -1): return .portraitUpsideDown
+        case (0, 1, -1, 0): return .landscapeLeft
+        case (0, -1, 1, 0): return .landscapeRight
+        default:
+            print("ERROR: unsupport transform!\(trackTransform)")
+            return .portrait
         }
     }
 }
