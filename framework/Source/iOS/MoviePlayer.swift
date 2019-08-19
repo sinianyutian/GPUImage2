@@ -31,7 +31,7 @@ public class MoviePlayer: AVPlayer, ImageSource {
     public weak var delegate: MoviePlayerDelegate?
     public var startTime: TimeInterval?
     public var endTime: TimeInterval?
-    public var loop: Bool = false
+    public var loop = false
     public private(set) var asset: AVAsset?
     public private(set) var isPlaying = false
     
@@ -78,7 +78,7 @@ public class MoviePlayer: AVPlayer, ImageSource {
         }
     }
     var nextSeeking: SeekingInfo?
-    var isSeeking: Bool = false
+    public var isSeeking = false
     
     public override init() {
         debugPrint("movie player init")
@@ -436,6 +436,10 @@ private extension MoviePlayer {
     }
     
     @objc func displayLinkCallback(displayLink: CADisplayLink) {
+        guard currentItem != nil else {
+            stop()
+            return
+        }
         sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
             guard let self = self else {
                 displayLink.invalidate()
