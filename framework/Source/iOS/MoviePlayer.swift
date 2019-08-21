@@ -354,6 +354,8 @@ private extension MoviePlayer {
         
         var luminanceGLTexture: CVOpenGLESTexture?
         
+        let originalOrientation = asset?.originalOrientation ?? .portrait
+        
         glActiveTexture(GLenum(GL_TEXTURE0))
         
         let luminanceGLTextureResult = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, movieFrame, nil, GLenum(GL_TEXTURE_2D), GL_LUMINANCE, GLsizei(bufferWidth), GLsizei(bufferHeight), GLenum(GL_LUMINANCE), GLenum(GL_UNSIGNED_BYTE), 0, &luminanceGLTexture)
@@ -371,7 +373,11 @@ private extension MoviePlayer {
         
         let luminanceFramebuffer: Framebuffer
         do {
-            luminanceFramebuffer = try Framebuffer(context: sharedImageProcessingContext, orientation: .portrait, size: GLSize(width: GLint(bufferWidth), height: GLint(bufferHeight)), textureOnly: true, overriddenTexture: luminanceTexture)
+            luminanceFramebuffer = try Framebuffer(context: sharedImageProcessingContext,
+                                                   orientation: originalOrientation,
+                                                   size: GLSize(width: GLint(bufferWidth), height: GLint(bufferHeight)),
+                                                   textureOnly: true,
+                                                   overriddenTexture: luminanceTexture)
         } catch {
             print("Could not create a framebuffer of the size (\(bufferWidth), \(bufferHeight)), error: \(error)")
             return
@@ -397,7 +403,7 @@ private extension MoviePlayer {
         let chrominanceFramebuffer: Framebuffer
         do {
             chrominanceFramebuffer = try Framebuffer(context: sharedImageProcessingContext,
-                                                     orientation: .portrait,
+                                                     orientation: originalOrientation,
                                                      size: GLSize(width:GLint(bufferWidth), height:GLint(bufferHeight)),
                                                      textureOnly: true,
                                                      overriddenTexture: chrominanceTexture)
@@ -406,7 +412,15 @@ private extension MoviePlayer {
             return
         }
         
-        let framebuffer = sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation: .portrait, size: GLSize(width: GLint(bufferWidth), height: GLint(bufferHeight)), textureOnly: false)
+        let portraitSize: GLSize
+        switch videoOrientation.rotationNeededForOrientation(.portrait) {
+        case .noRotation, .rotate180, .flipHorizontally, .flipVertically:
+            portraitSize = GLSize(width: GLint(bufferWidth), height: GLint(bufferHeight))
+        case .rotateCounterclockwise, .rotateClockwise, .rotateClockwiseAndFlipVertically, .rotateClockwiseAndFlipHorizontally:
+            portraitSize = GLSize(width: GLint(bufferHeight), height: GLint(bufferWidth))
+        }
+        
+        let framebuffer = sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation: .portrait, size: portraitSize, textureOnly: false)
         
         convertYUVToRGB(shader: yuvConversionShader,
                         luminanceFramebuffer: luminanceFramebuffer,
@@ -488,6 +502,23 @@ public extension AVAsset {
         case (1, 0, 0, -1): return .portraitUpsideDown
         case (0, 1, -1, 0): return .landscapeLeft
         case (0, -1, 1, 0): return .landscapeRight
+        default:
+            print("ERROR: unsupport transform!\(trackTransform)")
+            return .portrait
+        }
+    }
+    
+    // For original orientation is different with preferred image orientation when it is landscape
+    var originalOrientation: ImageOrientation? {
+        guard let videoTrack = tracks(withMediaType: AVMediaType.video).first else {
+            return nil
+        }
+        let trackTransform = videoTrack.preferredTransform
+        switch (trackTransform.a, trackTransform.b, trackTransform.c, trackTransform.d) {
+        case (1, 0, 0, 1): return .portrait
+        case (1, 0, 0, -1): return .portraitUpsideDown
+        case (0, 1, -1, 0): return .landscapeRight
+        case (0, -1, 1, 0): return .landscapeLeft
         default:
             print("ERROR: unsupport transform!\(trackTransform)")
             return .portrait
