@@ -39,9 +39,7 @@ public class MoviePlayer: AVPlayer, ImageSource {
     var videoOutput: AVPlayerItemVideoOutput?
     var displayLink: CADisplayLink?
     
-    lazy var yuvConversionShader: ShaderProgram? = {
-        _setupShader()
-    }()
+    lazy var framebufferGenerator = FramebufferGenerator()
     
     var totalTimeObservers = [MoviePlayerTimeObserver]()
     var timeObserversQueue = [MoviePlayerTimeObserver]()
@@ -250,17 +248,6 @@ public class MoviePlayer: AVPlayer, ImageSource {
 }
 
 private extension MoviePlayer {
-    func _setupShader() -> ShaderProgram? {
-        var yuvConversionShader: ShaderProgram?
-        sharedImageProcessingContext.runOperationSynchronously {
-            yuvConversionShader = crashOnShaderCompileFailure("MoviePlayer") {
-                try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(2),
-                                                                        fragmentShader: YUVConversionFullRangeFragmentShader)
-            }
-        }
-        return yuvConversionShader
-    }
-    
     func _setupDisplayLinkIfNeeded() {
         if displayLink == nil {
             displayLink = CADisplayLink(target: self, selector: #selector(displayLinkCallback))
@@ -338,115 +325,25 @@ private extension MoviePlayer {
     // MARK: Internal processing functions
     
     func _process(movieFrame: CVPixelBuffer, with sampleTime: CMTime) {
-        guard let yuvConversionShader = yuvConversionShader else {
-            debugPrint("ERROR! yuvConversionShader hasn't been setup before starting")
-            return
-        }
         delegate?.moviePlayerDidReadPixelBuffer(movieFrame, time: CMTimeGetSeconds(sampleTime))
         
-        let bufferHeight = CVPixelBufferGetHeight(movieFrame)
-        let bufferWidth = CVPixelBufferGetWidth(movieFrame)
-        CVPixelBufferLockBaseAddress(movieFrame, CVPixelBufferLockFlags(rawValue: CVOptionFlags(0)))
-        
-        let conversionMatrix = colorConversionMatrix601FullRangeDefault
-        
         let startTime = CFAbsoluteTimeGetCurrent()
-        
-        var luminanceGLTexture: CVOpenGLESTexture?
-        
-        let originalOrientation = asset?.originalOrientation ?? .portrait
-        
-        glActiveTexture(GLenum(GL_TEXTURE0))
-        
-        let luminanceGLTextureResult = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, movieFrame, nil, GLenum(GL_TEXTURE_2D), GL_LUMINANCE, GLsizei(bufferWidth), GLsizei(bufferHeight), GLenum(GL_LUMINANCE), GLenum(GL_UNSIGNED_BYTE), 0, &luminanceGLTexture)
-        
-        if(luminanceGLTextureResult != kCVReturnSuccess || luminanceGLTexture == nil) {
-            print("Could not create LuminanceGLTexture")
-            return
+        if runBenchmark || logEnabled {
+            totalFramesSent += 1
+        }
+        defer {
+            if runBenchmark {
+                let currentFrameTime = (CFAbsoluteTimeGetCurrent() - startTime)
+                totalFrameTime += currentFrameTime
+                print("Average frame time :\(1000.0 * totalFrameTime / Double(totalFramesSent)) ms")
+                print("Current frame time :\(1000.0 * currentFrameTime) ms")
+            }
         }
         
-        let luminanceTexture = CVOpenGLESTextureGetName(luminanceGLTexture!)
-        
-        glBindTexture(GLenum(GL_TEXTURE_2D), luminanceTexture)
-        glTexParameterf(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GLfloat(GL_CLAMP_TO_EDGE));
-        glTexParameterf(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GLfloat(GL_CLAMP_TO_EDGE));
-        
-        let luminanceFramebuffer: Framebuffer
-        do {
-            luminanceFramebuffer = try Framebuffer(context: sharedImageProcessingContext,
-                                                   orientation: originalOrientation,
-                                                   size: GLSize(width: GLint(bufferWidth), height: GLint(bufferHeight)),
-                                                   textureOnly: true,
-                                                   overriddenTexture: luminanceTexture)
-        } catch {
-            print("Could not create a framebuffer of the size (\(bufferWidth), \(bufferHeight)), error: \(error)")
-            return
-        }
-        
-        var chrominanceGLTexture: CVOpenGLESTexture?
-        
-        glActiveTexture(GLenum(GL_TEXTURE1))
-        
-        let chrominanceGLTextureResult = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, movieFrame, nil, GLenum(GL_TEXTURE_2D), GL_LUMINANCE_ALPHA, GLsizei(bufferWidth / 2), GLsizei(bufferHeight / 2), GLenum(GL_LUMINANCE_ALPHA), GLenum(GL_UNSIGNED_BYTE), 1, &chrominanceGLTexture)
-        
-        if(chrominanceGLTextureResult != kCVReturnSuccess || chrominanceGLTexture == nil) {
-            print("Could not create ChrominanceGLTexture")
-            return
-        }
-        
-        let chrominanceTexture = CVOpenGLESTextureGetName(chrominanceGLTexture!)
-        
-        glBindTexture(GLenum(GL_TEXTURE_2D), chrominanceTexture)
-        glTexParameterf(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GLfloat(GL_CLAMP_TO_EDGE));
-        glTexParameterf(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GLfloat(GL_CLAMP_TO_EDGE));
-        
-        let chrominanceFramebuffer: Framebuffer
-        do {
-            chrominanceFramebuffer = try Framebuffer(context: sharedImageProcessingContext,
-                                                     orientation: originalOrientation,
-                                                     size: GLSize(width:GLint(bufferWidth), height:GLint(bufferHeight)),
-                                                     textureOnly: true,
-                                                     overriddenTexture: chrominanceTexture)
-        } catch {
-            print("Could not create a framebuffer of the size (\(bufferWidth), \(bufferHeight)), error: \(error)")
-            return
-        }
-        
-        let portraitSize: GLSize
-        switch videoOrientation.rotationNeededForOrientation(.portrait) {
-        case .noRotation, .rotate180, .flipHorizontally, .flipVertically:
-            portraitSize = GLSize(width: GLint(bufferWidth), height: GLint(bufferHeight))
-        case .rotateCounterclockwise, .rotateClockwise, .rotateClockwiseAndFlipVertically, .rotateClockwiseAndFlipHorizontally:
-            portraitSize = GLSize(width: GLint(bufferHeight), height: GLint(bufferWidth))
-        }
-        
-        let framebuffer = sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation: .portrait, size: portraitSize, textureOnly: false)
-        
-        convertYUVToRGB(shader: yuvConversionShader,
-                        luminanceFramebuffer: luminanceFramebuffer,
-                        chrominanceFramebuffer: chrominanceFramebuffer,
-                        resultFramebuffer: framebuffer,
-                        colorConversionMatrix: conversionMatrix)
-        CVPixelBufferUnlockBaseAddress(movieFrame, CVPixelBufferLockFlags(rawValue: CVOptionFlags(0)))
-        
-        framebuffer.timingStyle = .videoFrame(timestamp: Timestamp(sampleTime))
+        guard let framebuffer = framebufferGenerator.generateFromPixelBuffer(movieFrame, frameTime: sampleTime, videoOrientation: videoOrientation) else { return }
         framebuffer.userInfo = framebufferUserInfo
         
         updateTargetsWithFramebuffer(framebuffer)
-        
-        // Clean up
-        CVOpenGLESTextureCacheFlush(sharedImageProcessingContext.coreVideoTextureCache, 0)
-        
-        if(runBenchmark || logEnabled) {
-            totalFramesSent += 1
-        }
-        
-        if runBenchmark {
-            let currentFrameTime = (CFAbsoluteTimeGetCurrent() - startTime)
-            totalFrameTime += currentFrameTime
-            print("Average frame time :\(1000.0 * totalFrameTime / Double(totalFramesSent)) ms")
-            print("Current frame time :\(1000.0 * currentFrameTime) ms")
-        }
     }
     
     @objc func displayLinkCallback(displayLink: CADisplayLink) {
