@@ -9,17 +9,28 @@ import CoreMedia
 
 public class FramebufferGenerator {
     lazy var yuvConversionShader = _setupShader()
+    private(set) var outputSize: GLSize?
+    private(set) var pixelBufferPool: CVPixelBufferPool?
+    private var renderFramebuffer: Framebuffer?
     
     public init() {
         
     }
     
-    public func generateFromPixelBuffer(_ movieFrame: CVPixelBuffer, frameTime: CMTime, videoOrientation: ImageOrientation) -> Framebuffer? {
+    public func generateFromYUVBuffer(_ yuvPixelBuffer: CVPixelBuffer, frameTime: CMTime, videoOrientation: ImageOrientation) -> Framebuffer? {
         var framebuffer: Framebuffer?
         sharedImageProcessingContext.runOperationSynchronously {
-            framebuffer = _generateFromPixelBuffer(movieFrame, frameTime: frameTime, videoOrientation: videoOrientation)
+            framebuffer = _generateFromYUVBuffer(yuvPixelBuffer, frameTime: frameTime, videoOrientation: videoOrientation)
         }
         return framebuffer
+    }
+    
+    public func convertToPixelBuffer(_ framebuffer: Framebuffer) -> CVPixelBuffer? {
+        var pixelBuffer: CVPixelBuffer?
+        sharedImageProcessingContext.runOperationSynchronously {
+            pixelBuffer = _convertToPixelBuffer(framebuffer)
+        }
+        return pixelBuffer
     }
 }
 
@@ -35,24 +46,24 @@ private extension FramebufferGenerator {
         return yuvConversionShader
     }
     
-    func _generateFromPixelBuffer(_ movieFrame: CVPixelBuffer, frameTime: CMTime, videoOrientation: ImageOrientation) -> Framebuffer? {
+    func _generateFromYUVBuffer(_ yuvPixelBuffer: CVPixelBuffer, frameTime: CMTime, videoOrientation: ImageOrientation) -> Framebuffer? {
         guard let yuvConversionShader = yuvConversionShader else {
             debugPrint("ERROR! yuvConversionShader hasn't been setup before starting")
             return nil
         }
         let originalOrientation = videoOrientation.originalOrientation
-        let bufferHeight = CVPixelBufferGetHeight(movieFrame)
-        let bufferWidth = CVPixelBufferGetWidth(movieFrame)
+        let bufferHeight = CVPixelBufferGetHeight(yuvPixelBuffer)
+        let bufferWidth = CVPixelBufferGetWidth(yuvPixelBuffer)
         let conversionMatrix = colorConversionMatrix601FullRangeDefault
-        CVPixelBufferLockBaseAddress(movieFrame, CVPixelBufferLockFlags(rawValue: CVOptionFlags(0)))
+        CVPixelBufferLockBaseAddress(yuvPixelBuffer, CVPixelBufferLockFlags(rawValue: CVOptionFlags(0)))
         defer {
-            CVPixelBufferUnlockBaseAddress(movieFrame, CVPixelBufferLockFlags(rawValue: CVOptionFlags(0)))
+            CVPixelBufferUnlockBaseAddress(yuvPixelBuffer, CVPixelBufferLockFlags(rawValue: CVOptionFlags(0)))
             CVOpenGLESTextureCacheFlush(sharedImageProcessingContext.coreVideoTextureCache, 0)
         }
         
         glActiveTexture(GLenum(GL_TEXTURE0))
         var luminanceGLTexture: CVOpenGLESTexture?
-        let luminanceGLTextureResult = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, movieFrame, nil, GLenum(GL_TEXTURE_2D), GL_LUMINANCE, GLsizei(bufferWidth), GLsizei(bufferHeight), GLenum(GL_LUMINANCE), GLenum(GL_UNSIGNED_BYTE), 0, &luminanceGLTexture)
+        let luminanceGLTextureResult = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, yuvPixelBuffer, nil, GLenum(GL_TEXTURE_2D), GL_LUMINANCE, GLsizei(bufferWidth), GLsizei(bufferHeight), GLenum(GL_LUMINANCE), GLenum(GL_UNSIGNED_BYTE), 0, &luminanceGLTexture)
         if luminanceGLTextureResult != kCVReturnSuccess || luminanceGLTexture == nil {
             print("Could not create LuminanceGLTexture")
             return nil
@@ -78,7 +89,7 @@ private extension FramebufferGenerator {
         
         glActiveTexture(GLenum(GL_TEXTURE1))
         var chrominanceGLTexture: CVOpenGLESTexture?
-        let chrominanceGLTextureResult = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, movieFrame, nil, GLenum(GL_TEXTURE_2D), GL_LUMINANCE_ALPHA, GLsizei(bufferWidth / 2), GLsizei(bufferHeight / 2), GLenum(GL_LUMINANCE_ALPHA), GLenum(GL_UNSIGNED_BYTE), 1, &chrominanceGLTexture)
+        let chrominanceGLTextureResult = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, yuvPixelBuffer, nil, GLenum(GL_TEXTURE_2D), GL_LUMINANCE_ALPHA, GLsizei(bufferWidth / 2), GLsizei(bufferHeight / 2), GLenum(GL_LUMINANCE_ALPHA), GLenum(GL_UNSIGNED_BYTE), 1, &chrominanceGLTexture)
         
         if chrominanceGLTextureResult != kCVReturnSuccess || chrominanceGLTexture == nil {
             print("Could not create ChrominanceGLTexture")
@@ -120,6 +131,64 @@ private extension FramebufferGenerator {
                         colorConversionMatrix: conversionMatrix)
         framebuffer.timingStyle = .videoFrame(timestamp: Timestamp(frameTime))
         return framebuffer
+    }
+    
+    func _convertToPixelBuffer(_ framebuffer: Framebuffer) -> CVPixelBuffer? {
+        if pixelBufferPool == nil || outputSize?.width != framebuffer.size.width || outputSize?.height != framebuffer.size.height {
+            outputSize = framebuffer.size
+            pixelBufferPool = _createPixelBufferPool(framebuffer.size.width, framebuffer.size.height, FourCharCode(kCVPixelFormatType_32BGRA), 3)
+        }
+        guard let pixelBufferPool = pixelBufferPool else { return nil }
+        var outPixelBuffer: CVPixelBuffer?
+        let pixelBufferStatus = CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferPool, &outPixelBuffer)
+        guard let pixelBuffer = outPixelBuffer, pixelBufferStatus == kCVReturnSuccess else {
+            print("WARNING: Unable to create pixel buffer, dropping frame")
+            return nil
+        }
+        
+        do {
+            if renderFramebuffer == nil {
+                CVBufferSetAttachment(pixelBuffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
+                CVBufferSetAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_601_4, .shouldPropagate)
+                CVBufferSetAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
+            }
+            
+            let bufferSize = framebuffer.size
+            var cachedTextureRef: CVOpenGLESTexture?
+            let _ = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, pixelBuffer, nil, GLenum(GL_TEXTURE_2D), GL_RGBA, bufferSize.width, bufferSize.height, GLenum(GL_BGRA), GLenum(GL_UNSIGNED_BYTE), 0, &cachedTextureRef)
+            let cachedTexture = CVOpenGLESTextureGetName(cachedTextureRef!)
+            
+            renderFramebuffer = try Framebuffer(context: sharedImageProcessingContext, orientation:.portrait, size:bufferSize, textureOnly:false, overriddenTexture:cachedTexture)
+            
+            renderFramebuffer?.activateFramebufferForRendering()
+            clearFramebufferWithColor(Color.black)
+            CVPixelBufferLockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
+            renderQuadWithShader(sharedImageProcessingContext.passthroughShader, uniformSettings: ShaderUniformSettings(), vertexBufferObject: sharedImageProcessingContext.standardImageVBO, inputTextures: [framebuffer.texturePropertiesForOutputRotation(.noRotation)], context: sharedImageProcessingContext)
+            
+            glFinish()
+        }
+        catch {
+            print("WARNING: Trouble appending pixel buffer at time: \(framebuffer.timingStyle.timestamp?.seconds() ?? 0) \(error)")
+        }
+        
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: CVOptionFlags(0)))
+        return pixelBuffer
+    }
+    
+    func _createPixelBufferPool(_ width: Int32, _ height: Int32, _ pixelFormat: FourCharCode, _ maxBufferCount: Int32) -> CVPixelBufferPool? {
+        var outputPool: CVPixelBufferPool? = nil
+        
+        let sourcePixelBufferOptions: NSDictionary = [kCVPixelBufferPixelFormatTypeKey: pixelFormat,
+                                                      kCVPixelBufferWidthKey: width,
+                                                      kCVPixelBufferHeightKey: height,
+                                                      kCVPixelFormatOpenGLESCompatibility: true,
+                                                      kCVPixelBufferIOSurfacePropertiesKey: NSDictionary()]
+        
+        let pixelBufferPoolOptions: NSDictionary = [kCVPixelBufferPoolMinimumBufferCountKey: maxBufferCount]
+        
+        CVPixelBufferPoolCreate(kCFAllocatorDefault, pixelBufferPoolOptions, sourcePixelBufferOptions, &outputPool)
+        
+        return outputPool
     }
 }
 

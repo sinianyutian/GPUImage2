@@ -340,7 +340,7 @@ private extension MoviePlayer {
             }
         }
         
-        guard let framebuffer = framebufferGenerator.generateFromPixelBuffer(movieFrame, frameTime: sampleTime, videoOrientation: videoOrientation) else { return }
+        guard let framebuffer = framebufferGenerator.generateFromYUVBuffer(movieFrame, frameTime: sampleTime, videoOrientation: videoOrientation) else { return }
         framebuffer.userInfo = framebufferUserInfo
         
         updateTargetsWithFramebuffer(framebuffer)
