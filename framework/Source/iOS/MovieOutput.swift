@@ -104,6 +104,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         self.size = size
         
         assetWriter = try AVAssetWriter(url:URL, fileType:fileType)
+        assetWriter.shouldOptimizeForNetworkUse = true
         
         var localSettings:[String:Any]
         if let videoSettings = videoSettings {
