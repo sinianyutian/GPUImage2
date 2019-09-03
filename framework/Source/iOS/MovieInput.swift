@@ -75,7 +75,13 @@ public class MovieInput: ImageSource {
     var audioInputStatusObserver:NSKeyValueObservation?
     
     public var useRealtimeThreads = false
-    public var transcodingOnly = false
+    public var transcodingOnly = false {
+        didSet {
+            if transcodingOnly, let movieOutput = synchronizedMovieOutput, let transform = asset.tracks(withMediaType: .video).first?.preferredTransform {
+                movieOutput.preferredTransform = transform
+            }
+        }
+    }
     var timebaseInfo = mach_timebase_info_data_t()
     var currentThread:Thread?
     

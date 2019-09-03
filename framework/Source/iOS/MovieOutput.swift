@@ -87,6 +87,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     var shouldWaitForEncoding: Bool {
         return !encodingLiveVideo || waitUtilDataIsReadyForLiveVideo
     }
+    var preferredTransform: CGAffineTransform?
     
     public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil, keepLastPixelBuffer: Bool = false) throws {
 
@@ -165,6 +166,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                     self.delegate?.movieOutputWriterError(self, error: error)
                 }
                 self.observations.append(observation)
+                
+                if let preferredTransform = self.preferredTransform {
+                    self.assetWriterVideoInput.transform = preferredTransform
+                }
                 
                 var success = false
                 try NSObject.catchException {
