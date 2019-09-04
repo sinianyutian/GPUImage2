@@ -73,6 +73,7 @@ public class MovieInput: ImageSource {
     var readingShouldWait = false
     var videoInputStatusObserver:NSKeyValueObservation?
     var audioInputStatusObserver:NSKeyValueObservation?
+    let maxFPS: Float?
     
     public var useRealtimeThreads = false
     public var transcodingOnly = false {
@@ -94,7 +95,7 @@ public class MovieInput: ImageSource {
     public var framebufferUserInfo:[AnyHashable:Any]?
     
     // TODO: Someone will have to add back in the AVPlayerItem logic, because I don't know how that works
-    public init(asset:AVAsset, videoComposition: AVVideoComposition?, playAtActualSpeed:Bool = false, loop:Bool = false, playrate:Double = 1.0, audioSettings:[String:Any]? = nil) throws {
+    public init(asset:AVAsset, videoComposition: AVVideoComposition?, playAtActualSpeed:Bool = false, loop:Bool = false, playrate:Double = 1.0, audioSettings:[String:Any]? = nil, maxFPS: Float? = nil) throws {
         debugPrint("movie input init \(asset)")
 
         self.asset = asset
@@ -104,6 +105,7 @@ public class MovieInput: ImageSource {
         self.playrate = playrate
         self.yuvConversionShader = crashOnShaderCompileFailure("MovieInput"){try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(2), fragmentShader:YUVConversionFullRangeFragmentShader)}
         self.audioSettings = audioSettings
+        self.maxFPS = maxFPS
     }
 
     public convenience init(url:URL, playAtActualSpeed:Bool = false, loop:Bool = false, playrate: Double = 1.0, audioSettings:[String:Any]? = nil) throws {
@@ -334,6 +336,9 @@ public class MovieInput: ImageSource {
         }
         
         var currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
+        if let fps = maxFPS, abs(currentSampleTime.seconds.remainder(dividingBy: Double(1 / fps))) > Double(1 / fps / 4) {
+            return
+        }
         var duration = self.asset.duration // Only used for the progress block so its acuracy is not critical
         self.synchronizedEncodingDebugPrint("Process video frame input. Time:\(CMTimeGetSeconds(currentSampleTime))")
         
