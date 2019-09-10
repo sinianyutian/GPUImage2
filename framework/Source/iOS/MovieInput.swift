@@ -162,6 +162,20 @@ public class MovieInput: ImageSource {
         self.requestedStartTime = self.currentTime
     }
     
+    public func pauseWithoutCancel() {
+        requestedStartTime = currentTime
+        conditionLock.lock()
+        readingShouldWait = true
+        conditionLock.unlock()
+    }
+    
+    public func resume() {
+        conditionLock.lock()
+        readingShouldWait = false
+        conditionLock.signal()
+        conditionLock.unlock()
+    }
+    
     // MARK: -
     // MARK: Internal processing functions
     
