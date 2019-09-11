@@ -336,18 +336,19 @@ public class MovieInput: ImageSource {
         }
         
         var currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
-        if let fps = maxFPS, abs(currentSampleTime.seconds.remainder(dividingBy: Double(1 / fps))) > Double(1 / fps / 4) {
+        // NOTE: When calculating frame pre second, floating point maybe rounded, so we have to add tolerance manually
+        if let fps = maxFPS, let currentTime = currentTime, (currentSampleTime.seconds - currentTime.seconds) < 1 / Double(fps) - 0.0000001  {
             return
         }
         var duration = self.asset.duration // Only used for the progress block so its acuracy is not critical
         self.synchronizedEncodingDebugPrint("Process video frame input. Time:\(CMTimeGetSeconds(currentSampleTime))")
         
+        self.currentTime = currentSampleTime
+        
         if transcodingOnly, let movieOutput = synchronizedMovieOutput {
             movieOutput.processVideoBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: false)
             return
         }
-        
-        self.currentTime = currentSampleTime
         
         if let startTime = self.startTime {
             // Make sure our samples start at kCMTimeZero if the video was started midway.
