@@ -336,6 +336,7 @@ public class MovieInput: ImageSource {
         }
         
         var currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
+        // NOTE: When calculating frame pre second, floating point maybe rounded, so we have to add tolerance manually
         if let fps = maxFPS, let currentTime = currentTime, (currentSampleTime.seconds - currentTime.seconds) < 1 / Double(fps) - 0.0000001  {
             return
         }
