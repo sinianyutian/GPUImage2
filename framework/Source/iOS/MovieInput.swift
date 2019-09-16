@@ -74,6 +74,7 @@ public class MovieInput: ImageSource {
     var videoInputStatusObserver:NSKeyValueObservation?
     var audioInputStatusObserver:NSKeyValueObservation?
     let maxFPS: Float?
+    lazy var framebufferGenerator = FramebufferGenerator()
     
     public var useRealtimeThreads = false
     public var transcodingOnly = false {
@@ -122,6 +123,10 @@ public class MovieInput: ImageSource {
         
         self.videoInputStatusObserver?.invalidate()
         self.audioInputStatusObserver?.invalidate()
+    }
+    
+    public var videoOrientation: ImageOrientation {
+        return asset.imageOrientation ?? .portrait
     }
 
     // MARK: -
@@ -417,86 +422,12 @@ public class MovieInput: ImageSource {
     }
     
     func process(movieFrame:CVPixelBuffer, withSampleTime:CMTime) {
-        let bufferHeight = CVPixelBufferGetHeight(movieFrame)
-        let bufferWidth = CVPixelBufferGetWidth(movieFrame)
-        CVPixelBufferLockBaseAddress(movieFrame, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
+        let startTime = CACurrentMediaTime()
         
-        let conversionMatrix = colorConversionMatrix601FullRangeDefault
-        // TODO: Get this color query working
-        //        if let colorAttachments = CVBufferGetAttachment(movieFrame, kCVImageBufferYCbCrMatrixKey, nil) {
-        //            if(CFStringCompare(colorAttachments, kCVImageBufferYCbCrMatrix_ITU_R_601_4, 0) == .EqualTo) {
-        //                _preferredConversion = kColorConversion601FullRange
-        //            } else {
-        //                _preferredConversion = kColorConversion709
-        //            }
-        //        } else {
-        //            _preferredConversion = kColorConversion601FullRange
-        //        }
-        
-        let startTime = CFAbsoluteTimeGetCurrent()
-        
-        var luminanceGLTexture: CVOpenGLESTexture?
-        
-        glActiveTexture(GLenum(GL_TEXTURE0))
-        
-        let luminanceGLTextureResult = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, movieFrame, nil, GLenum(GL_TEXTURE_2D), GL_LUMINANCE, GLsizei(bufferWidth), GLsizei(bufferHeight), GLenum(GL_LUMINANCE), GLenum(GL_UNSIGNED_BYTE), 0, &luminanceGLTexture)
-        
-        if(luminanceGLTextureResult != kCVReturnSuccess || luminanceGLTexture == nil) {
-            print("Could not create LuminanceGLTexture")
-            return
-        }
-        
-        let luminanceTexture = CVOpenGLESTextureGetName(luminanceGLTexture!)
-        
-        glBindTexture(GLenum(GL_TEXTURE_2D), luminanceTexture)
-        glTexParameterf(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GLfloat(GL_CLAMP_TO_EDGE));
-        glTexParameterf(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GLfloat(GL_CLAMP_TO_EDGE));
-        
-        let luminanceFramebuffer: Framebuffer
-        do {
-            luminanceFramebuffer = try Framebuffer(context: sharedImageProcessingContext, orientation: .portrait, size: GLSize(width:GLint(bufferWidth), height:GLint(bufferHeight)), textureOnly: true, overriddenTexture: luminanceTexture)
-        } catch {
-            print("Could not create a framebuffer of the size (\(bufferWidth), \(bufferHeight)), error: \(error)")
-            return
-        }
-        
-        var chrominanceGLTexture: CVOpenGLESTexture?
-        
-        glActiveTexture(GLenum(GL_TEXTURE1))
-        
-        let chrominanceGLTextureResult = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, movieFrame, nil, GLenum(GL_TEXTURE_2D), GL_LUMINANCE_ALPHA, GLsizei(bufferWidth / 2), GLsizei(bufferHeight / 2), GLenum(GL_LUMINANCE_ALPHA), GLenum(GL_UNSIGNED_BYTE), 1, &chrominanceGLTexture)
-        
-        if(chrominanceGLTextureResult != kCVReturnSuccess || chrominanceGLTexture == nil) {
-            print("Could not create ChrominanceGLTexture")
-            return
-        }
-        
-        let chrominanceTexture = CVOpenGLESTextureGetName(chrominanceGLTexture!)
-        
-        glBindTexture(GLenum(GL_TEXTURE_2D), chrominanceTexture)
-        glTexParameterf(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GLfloat(GL_CLAMP_TO_EDGE));
-        glTexParameterf(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GLfloat(GL_CLAMP_TO_EDGE));
-        
-        let chrominanceFramebuffer: Framebuffer
-        do {
-            chrominanceFramebuffer = try Framebuffer(context: sharedImageProcessingContext, orientation: .portrait, size: GLSize(width:GLint(bufferWidth), height:GLint(bufferHeight)), textureOnly: true, overriddenTexture: chrominanceTexture)
-        } catch {
-            print("Could not create a framebuffer of the size (\(bufferWidth), \(bufferHeight)), error: \(error)")
-            return
-        }
-        
-        self.movieFramebuffer?.unlock()
-        let movieFramebuffer = sharedImageProcessingContext.framebufferCache.requestFramebufferWithProperties(orientation:.portrait, size:GLSize(width:GLint(bufferWidth), height:GLint(bufferHeight)), textureOnly:false)
-        movieFramebuffer.lock()
-        
-        convertYUVToRGB(shader:self.yuvConversionShader, luminanceFramebuffer:luminanceFramebuffer, chrominanceFramebuffer:chrominanceFramebuffer, resultFramebuffer:movieFramebuffer, colorConversionMatrix:conversionMatrix)
-        CVPixelBufferUnlockBaseAddress(movieFrame, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
-        
-        movieFramebuffer.timingStyle = .videoFrame(timestamp:Timestamp(withSampleTime))
-        movieFramebuffer.userInfo = self.framebufferUserInfo
-        self.movieFramebuffer = movieFramebuffer
-        
-        self.updateTargetsWithFramebuffer(movieFramebuffer)
+        guard let framebuffer = framebufferGenerator.generateFromYUVBuffer(movieFrame, frameTime: withSampleTime, videoOrientation: videoOrientation) else { return }
+        framebuffer.userInfo = framebufferUserInfo
+        self.movieFramebuffer = framebuffer
+        self.updateTargetsWithFramebuffer(framebuffer)
         
         if(self.runBenchmark || self.synchronizedEncodingDebug) {
             self.totalFramesSent += 1
