@@ -55,6 +55,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     private var isRecording = false
     var videoEncodingIsFinished = false
     var audioEncodingIsFinished = false
+    var markIsFinishedAfterProcessing = false
     private var startFrameTime: CMTime?
     public var recordedDuration: CMTime?
     private var previousFrameTime: CMTime?
@@ -267,7 +268,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     public func newFramebufferAvailable(_ framebuffer:Framebuffer, fromSourceIndex:UInt) {
         glFinish();
         
-        let work = {
+        let work = { [weak self] in
+            guard let self = self else { return }
             // Discard first n frames
             if self.dropFirstFrames > 0 {
                 self.dropFirstFrames -= 1
@@ -307,6 +309,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 // Better to poll isReadyForMoreMediaData often since when it does become true
                 // we don't want to risk letting framebuffers pile up in between poll intervals.
                 usleep(100000) // 0.1 seconds
+                if self.markIsFinishedAfterProcessing {
+                    self.synchronizedEncodingDebugPrint("set videoEncodingIsFinished to true after processing")
+                    self.markIsFinishedAfterProcessing = false
+                    self.videoEncodingIsFinished = true
+                }
             }
             
             if self.keepLastPixelBuffer {
@@ -344,6 +351,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             sharedImageProcessingContext.runOperationAsynchronously {
                 framebuffer.unlock()
+            }
+            if self.videoEncodingIsFinished {
+                self.assetWriterVideoInput.markAsFinished()
             }
         }
 
@@ -472,12 +482,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     public func processAudioBuffer(_ sampleBuffer:CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool) {
         let work = {
-            var shouldInvalidate = shouldInvalidateSampleWhenDone
-            defer {
-                if(shouldInvalidate) {
-                    CMSampleBufferInvalidate(sampleBuffer)
-                }
-            }
+            self.pendingAudioBuffers.append(sampleBuffer)
             
             guard self.isRecording,
                 self.assetWriter.status == .writing,
@@ -499,10 +504,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 usleep(100000)
             }
             
-            self.pendingAudioBuffers.append(sampleBuffer)
             guard self.previousFrameTime != nil else {
                 self.synchronizedEncodingDebugPrint("Add audio sample to pending queue but first video frame is not ready yet. Time:\(CMTimeGetSeconds(currentSampleTime))")
-                shouldInvalidate = false
                 return
             }
             
@@ -510,10 +513,13 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             do {
                 try NSObject.catchException {
-                    while self.pendingAudioBuffers.count > 0 {
-                        let audioBuffer = self.pendingAudioBuffers.removeFirst()
+                    while let audioBuffer = self.pendingAudioBuffers.first {
                         if (!assetWriterAudioInput.append(audioBuffer)) {
                             print("WARNING: Trouble appending audio sample buffer: \(String(describing: self.assetWriter.error))")
+                        }
+                        self.pendingAudioBuffers.removeFirst()
+                        if shouldInvalidateSampleWhenDone {
+                            CMSampleBufferInvalidate(sampleBuffer)
                         }
                     }
                 }
@@ -527,11 +533,6 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             movieProcessingContext.runOperationAsynchronously(work)
         }
         else {
-            // Process pending audio buffers at first
-            while pendingAudioBuffers.count > 0 {
-                let audioBuffer = pendingAudioBuffers.removeFirst()
-                processAudioBuffer(audioBuffer, shouldInvalidateSampleWhenDone: shouldInvalidateSampleWhenDone)
-            }
             work()
         }
     }

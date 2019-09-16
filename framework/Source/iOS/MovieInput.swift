@@ -167,6 +167,20 @@ public class MovieInput: ImageSource {
         self.requestedStartTime = self.currentTime
     }
     
+    public func pauseWithoutCancel() {
+        requestedStartTime = currentTime
+        conditionLock.lock()
+        readingShouldWait = true
+        conditionLock.unlock()
+    }
+    
+    public func resume() {
+        conditionLock.lock()
+        readingShouldWait = false
+        conditionLock.signal()
+        conditionLock.unlock()
+    }
+    
     // MARK: -
     // MARK: Internal processing functions
     
@@ -302,21 +316,31 @@ public class MovieInput: ImageSource {
         
         assetReader.cancelReading()
         
-        // Since only the main thread will cancel and create threads jump onto it to prevent
-        // the current thread from being cancelled in between the below if statement and creating the new thread.
-        DispatchQueue.main.async {
-            // Start the video over so long as it wasn't cancelled.
-            if (self.loop && !thread.isCancelled) {
-                self.currentThread = Thread(target: self, selector: #selector(self.beginReading), object: nil)
-                self.currentThread?.start()
-            }
-            else {
-                self.delegate?.didFinishMovie()
-                self.completion?(nil)
+        let readerPostAction = {
+            // Since only the main thread will cancel and create threads jump onto it to prevent
+            // the current thread from being cancelled in between the below if statement and creating the new thread.
+            DispatchQueue.main.async {
+                assetReader.cancelReading()
                 
-                self.synchronizedEncodingDebugPrint("MovieInput finished reading")
-                self.synchronizedEncodingDebugPrint("MovieInput total frames sent: \(self.totalFramesSent)")
+                // Start the video over so long as it wasn't cancelled.
+                if (self.loop && !thread.isCancelled) {
+                    self.currentThread = Thread(target: self, selector: #selector(self.beginReading), object: nil)
+                    self.currentThread?.start()
+                }
+                else {
+                    self.synchronizedEncodingDebugPrint("MovieInput finished reading")
+                    self.synchronizedEncodingDebugPrint("MovieInput total frames sent: \(self.totalFramesSent)")
+                    self.delegate?.didFinishMovie()
+                    self.completion?(nil)
+                }
             }
+        }
+        
+        if synchronizedMovieOutput != nil {
+            // Make sure all image processing task is finished when encoding
+            sharedImageProcessingContext.runOperationAsynchronously(readerPostAction)
+        } else {
+            readerPostAction()
         }
     }
     
@@ -327,8 +351,7 @@ public class MovieInput: ImageSource {
                     // Documentation: "Clients that are monitoring each input's readyForMoreMediaData value must call markAsFinished on an input when they are done
                     // appending buffers to it. This is necessary to prevent other inputs from stalling, as they may otherwise wait forever
                     // for that input's media data, attempting to complete the ideal interleaving pattern."
-                    movieOutput.videoEncodingIsFinished = true
-                    movieOutput.assetWriterVideoInput.markAsFinished()
+                    movieOutput.markIsFinishedAfterProcessing = true
                 }
             }
             return
@@ -341,44 +364,63 @@ public class MovieInput: ImageSource {
         }
         
         var currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
-        // NOTE: When calculating frame pre second, floating point maybe rounded, so we have to add tolerance manually
-        if let fps = maxFPS, let currentTime = currentTime, (currentSampleTime.seconds - currentTime.seconds) < 1 / Double(fps) - 0.0000001  {
-            return
-        }
-        var duration = self.asset.duration // Only used for the progress block so its acuracy is not critical
-        self.synchronizedEncodingDebugPrint("Process video frame input. Time:\(CMTimeGetSeconds(currentSampleTime))")
-        
-        self.currentTime = currentSampleTime
+        currentTime = currentSampleTime
         
         if transcodingOnly, let movieOutput = synchronizedMovieOutput {
             movieOutput.processVideoBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: false)
             return
         }
         
-        if let startTime = self.startTime {
+        var duration = asset.duration // Only used for the progress block so its acuracy is not critical
+        if let startTime = startTime {
             // Make sure our samples start at kCMTimeZero if the video was started midway.
             currentSampleTime = CMTimeSubtract(currentSampleTime, startTime)
-            if let trimmedDuration = self.trimmedDuration, startTime.seconds > 0, CMTimeAdd(startTime, trimmedDuration) <= duration {
+            if let trimmedDuration = trimmedDuration, startTime.seconds > 0, CMTimeAdd(startTime, trimmedDuration) <= duration {
                 duration = trimmedDuration
             } else {
                 duration = CMTimeSubtract(duration, startTime)
             }
         }
         
-        if (self.playAtActualSpeed) {
+        // NOTE: When calculating frame pre second, floating point maybe rounded, so we have to add tolerance manually
+        if let fps = maxFPS, let currentTime = currentTime, (currentSampleTime.seconds - currentTime.seconds) < 1 / Double(fps) - 0.0000001 {
+            return
+        }
+        
+        progress?(currentSampleTime.seconds/duration.seconds)
+        
+        if synchronizedMovieOutput != nil {
+            // For synchrozied transcoding, separate AVAssetReader thread and OpenGL thread to improve performance
+            sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
+                self?.processNextVideoSampleOnGLThread(sampleBuffer, currentSampleTime: currentSampleTime)
+                CMSampleBufferInvalidate(sampleBuffer)
+            }
+        } else {
+            processNextVideoSampleOnGLThread(sampleBuffer, currentSampleTime: currentSampleTime)
+            CMSampleBufferInvalidate(sampleBuffer)
+        }
+    }
+    
+    func processNextVideoSampleOnGLThread(_ sampleBuffer: CMSampleBuffer, currentSampleTime: CMTime) {
+        
+        synchronizedEncodingDebugPrint("Process video frame input. Time:\(CMTimeGetSeconds(currentSampleTime))")
+        
+        if playAtActualSpeed {
             let currentSampleTimeNanoseconds = Int64(currentSampleTime.seconds * 1_000_000_000 / playrate)
             let currentActualTime = DispatchTime.now()
             
-            if(self.actualStartTime == nil) { self.actualStartTime = currentActualTime }
+            if actualStartTime == nil {
+                actualStartTime = currentActualTime
+            }
             
             // Determine how much time we need to wait in order to display the frame at the right currentActualTime such that it will match the currentSampleTime.
             // The reason we subtract the actualStartTime from the currentActualTime is so the actual time starts at zero relative to the video start.
-            let delay = currentSampleTimeNanoseconds - Int64(currentActualTime.uptimeNanoseconds-self.actualStartTime!.uptimeNanoseconds)
+            let delay = currentSampleTimeNanoseconds - Int64(currentActualTime.uptimeNanoseconds - actualStartTime!.uptimeNanoseconds)
             
             //print("currentSampleTime: \(currentSampleTimeNanoseconds) currentTime: \((currentActualTime.uptimeNanoseconds-self.actualStartTime!.uptimeNanoseconds)) delay: \(delay)")
             
-            if(delay > 0) {
-                mach_wait_until(mach_absolute_time()+self.nanosToAbs(UInt64(delay)))
+            if delay > 0 {
+                mach_wait_until(mach_absolute_time() + nanosToAbs(UInt64(delay)))
             }
             else {
                 // This only happens if we aren't given enough processing time for playback
@@ -390,11 +432,8 @@ public class MovieInput: ImageSource {
             }
         }
         
-        self.progress?(currentSampleTime.seconds/duration.seconds)
-        
-        sharedImageProcessingContext.runOperationSynchronously{
+        sharedImageProcessingContext.runOperationSynchronously {
             self.process(movieFrame:sampleBuffer)
-            CMSampleBufferInvalidate(sampleBuffer)
         }
     }
     
@@ -411,7 +450,14 @@ public class MovieInput: ImageSource {
         
         self.synchronizedEncodingDebugPrint("Process audio sample input. Time:\(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)))")
         
-        self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: !transcodingOnly)
+        if synchronizedMovieOutput != nil {
+            sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
+                guard let self = self else { return }
+                self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: !self.transcodingOnly)
+            }
+        } else {
+            audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: !transcodingOnly)
+        }
     }
     
     func process(movieFrame frame:CMSampleBuffer) {
