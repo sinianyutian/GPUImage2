@@ -482,13 +482,14 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     public func processAudioBuffer(_ sampleBuffer:CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool) {
         let work = {
-            self.pendingAudioBuffers.append(sampleBuffer)
-            
             guard self.isRecording,
                 self.assetWriter.status == .writing,
                 !self.audioEncodingIsFinished,
                 let assetWriterAudioInput = self.assetWriterAudioInput else {
                     self.synchronizedEncodingDebugPrint("Guard fell through, dropping audio sample")
+                    if shouldInvalidateSampleWhenDone {
+                        CMSampleBufferInvalidate(sampleBuffer)
+                    }
                     return
             }
             
@@ -496,8 +497,13 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             guard (assetWriterAudioInput.isReadyForMoreMediaData || self.shouldWaitForEncoding) else {
                 print("Had to drop a audio sample at time \(currentSampleTime)")
+                if shouldInvalidateSampleWhenDone {
+                    CMSampleBufferInvalidate(sampleBuffer)
+                }
                 return
             }
+            
+            self.pendingAudioBuffers.append(sampleBuffer)
             
             while(!assetWriterAudioInput.isReadyForMoreMediaData && self.shouldWaitForEncoding && !self.audioEncodingIsFinished) {
                 self.synchronizedEncodingDebugPrint("Audio waiting...")
@@ -519,7 +525,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                         }
                         self.pendingAudioBuffers.removeFirst()
                         if shouldInvalidateSampleWhenDone {
-                            CMSampleBufferInvalidate(sampleBuffer)
+                            CMSampleBufferInvalidate(audioBuffer)
                         }
                     }
                 }
