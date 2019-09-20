@@ -389,9 +389,9 @@ public class MovieInput: ImageSource {
         
         progress?(currentSampleTime.seconds/duration.seconds)
         
-        if let movieOutput = synchronizedMovieOutput {
+        if synchronizedMovieOutput != nil {
             // For synchrozied transcoding, separate AVAssetReader thread and OpenGL thread to improve performance
-            movieOutput.movieProcessingContext.runOperationAsynchronously { [weak self] in
+            sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
                 self?.processNextVideoSampleOnGLThread(sampleBuffer, currentSampleTime: currentSampleTime)
                 CMSampleBufferInvalidate(sampleBuffer)
             }
@@ -432,7 +432,9 @@ public class MovieInput: ImageSource {
             }
         }
         
-        process(movieFrame:sampleBuffer)
+        sharedImageProcessingContext.runOperationSynchronously {
+            self.process(movieFrame:sampleBuffer)
+        }
     }
     
     func readNextAudioSample(with assetReader: AVAssetReader, from audioTrackOutput:AVAssetReaderOutput) {
@@ -533,7 +535,7 @@ public class MovieInput: ImageSource {
         
         self.conditionLock.lock()
         // Allow reading if either input is able to accept data, prevent reading if both inputs are unable to accept data.
-        if(movieOutput.assetWriterVideoInput.isReadyForMoreMediaData || movieOutput.assetWriterAudioInput?.isReadyForMoreMediaData == true) {
+        if(movieOutput.assetWriterVideoInput.isReadyForMoreMediaData || movieOutput.assetWriterAudioInput?.isReadyForMoreMediaData ?? false) {
             self.readingShouldWait = false
             self.conditionLock.signal()
         }
