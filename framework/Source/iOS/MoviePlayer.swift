@@ -77,6 +77,7 @@ public class MoviePlayer: AVPlayer, ImageSource {
     }
     var nextSeeking: SeekingInfo?
     public var isSeeking = false
+    public var disableGPURender = false
     
     public override init() {
         debugPrint("movie player init")
@@ -114,12 +115,16 @@ public class MoviePlayer: AVPlayer, ImageSource {
         self.playerItem = item
         self.asset = item?.asset
         if let item = item {
-            let outputSettings = [String(kCVPixelBufferPixelFormatTypeKey) : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
-            let videoOutput = AVPlayerItemVideoOutput(outputSettings: outputSettings)
-            videoOutput.suppressesPlayerRendering = true
-            item.add(videoOutput)
-            item.audioTimePitchAlgorithm = .varispeed
-            self.videoOutput = videoOutput
+            if !disableGPURender {
+                let outputSettings = [String(kCVPixelBufferPixelFormatTypeKey) : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+                let videoOutput = AVPlayerItemVideoOutput(outputSettings: outputSettings)
+                videoOutput.suppressesPlayerRendering = true
+                item.add(videoOutput)
+                item.audioTimePitchAlgorithm = .varispeed
+                self.videoOutput = videoOutput
+            } else {
+                self.videoOutput = nil
+            }
             _setupPlayerObservers()
         } else {
             self.videoOutput = nil
@@ -340,7 +345,7 @@ private extension MoviePlayer {
             }
         }
         
-        guard let framebuffer = framebufferGenerator.generateFromYUVBuffer(movieFrame, frameTime: sampleTime, videoOrientation: videoOrientation) else { return }
+        guard !disableGPURender, let framebuffer = framebufferGenerator.generateFromYUVBuffer(movieFrame, frameTime: sampleTime, videoOrientation: videoOrientation) else { return }
         framebuffer.userInfo = framebufferUserInfo
         
         updateTargetsWithFramebuffer(framebuffer)
@@ -351,20 +356,24 @@ private extension MoviePlayer {
             stop()
             return
         }
-        sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
-            guard let self = self else {
-                displayLink.invalidate()
+        if !disableGPURender {
+            sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
+                self?._displayLinkCallback(displayLink)
+            }
+        } else {
+            _displayLinkCallback(displayLink)
+        }
+    }
+    
+    private func _displayLinkCallback(_ displayLink: CADisplayLink) {
+        let playTime = currentTime()
+        if self.videoOutput?.hasNewPixelBuffer(forItemTime: playTime) == true {
+            guard let pixelBuffer = videoOutput?.copyPixelBuffer(forItemTime: playTime, itemTimeForDisplay: nil) else {
+                print("Failed to copy pixel buffer at time:\(playTime)")
                 return
             }
-            let currentTime = self.currentTime()
-            if self.videoOutput?.hasNewPixelBuffer(forItemTime: currentTime) == true {
-                guard let pixelBuffer = self.videoOutput?.copyPixelBuffer(forItemTime: currentTime, itemTimeForDisplay: nil) else {
-                    print("Failed to copy pixel buffer at time:\(currentTime)")
-                    return
-                }
-                self._notifyTimeObserver(with: currentTime)
-                self._process(movieFrame: pixelBuffer, with: currentTime)
-            }
+            _notifyTimeObserver(with: playTime)
+            _process(movieFrame: pixelBuffer, with: playTime)
         }
     }
     
