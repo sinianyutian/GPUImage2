@@ -36,15 +36,25 @@ public enum PhysicalCameraLocation {
         }
     }
     
-    public func device() -> AVCaptureDevice? {
-        let devices = AVCaptureDevice.devices(for: .video)
-        for device in devices {
-            if (device.position == self.captureDevicePosition()) {
-                return device
+    public func device(_ type: AVCaptureDevice.DeviceType) -> AVCaptureDevice? {
+        if #available(iOS 13.0, *) {
+            if let matchedDevice = AVCaptureDevice.DiscoverySession(deviceTypes: [type], mediaType: .video, position: captureDevicePosition()).devices.first {
+                return matchedDevice
             }
+            // Or use default wideAngleCamera
+            return AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: captureDevicePosition()).devices.first
+        } else {
+            // Fallback on earlier versions
+            let devices = AVCaptureDevice.devices(for: .video)
+            for device in devices {
+                
+                if (device.position == self.captureDevicePosition()) {
+                    return device
+                }
+            }
+            
+            return AVCaptureDevice.default(for: .video)
         }
-        
-        return AVCaptureDevice.default(for: .video)
     }
 }
 
@@ -57,30 +67,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public var location:PhysicalCameraLocation {
         didSet {
             if oldValue == location { return }
-            
-            guard let device = location.device() else {
-                fatalError("ERROR: Can't find video devices for \(location)")
-            }
-            
-            do {
-                let newVideoInput = try AVCaptureDeviceInput(device: device)
-                captureSession.beginConfiguration()
-                
-                captureSession.removeInput(videoInput)
-                if captureSession.canAddInput(newVideoInput) {
-                    inputCamera = device
-                    captureSession.addInput(newVideoInput)
-                    videoInput = newVideoInput
-                    configureStabilization()
-                } else {
-                    print("Can't add video input")
-                    captureSession.addInput(videoInput)
-                }
-                
-                captureSession.commitConfiguration()
-            } catch let error {
-                fatalError("ERROR: Could not init device: \(error)")
-            }
+            configureDeviceInput()
         }
     }
     public var runBenchmark:Bool = false
@@ -111,6 +98,12 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     public var audioInput:AVCaptureDeviceInput?
     public var audioOutput:AVCaptureAudioDataOutput?
     public var dontDropFrames: Bool = false
+    public var deviceType = AVCaptureDevice.DeviceType.builtInWideAngleCamera {
+        didSet {
+            guard oldValue.rawValue != deviceType.rawValue else { return }
+            configureDeviceInput()
+        }
+    }
     public var backCameraStableMode: AVCaptureVideoStabilizationMode = .standard {
         didSet {
             if location == .backFacing {
@@ -141,7 +134,7 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     
     var captureSessionRestartAttempts = 0
 
-    public init(sessionPreset:AVCaptureSession.Preset, cameraDevice:AVCaptureDevice? = nil, location:PhysicalCameraLocation = .backFacing, captureAsYUV:Bool = true, photoOutput: AVCapturePhotoOutput? = nil, metadataDelegate: AVCaptureMetadataOutputObjectsDelegate? = nil, metadataObjectTypes: [AVMetadataObject.ObjectType]? = nil) throws {
+    public init(sessionPreset:AVCaptureSession.Preset, cameraDevice:AVCaptureDevice? = nil, location:PhysicalCameraLocation = .backFacing, captureAsYUV:Bool = true, photoOutput: AVCapturePhotoOutput? = nil, metadataDelegate: AVCaptureMetadataOutputObjectsDelegate? = nil, metadataObjectTypes: [AVMetadataObject.ObjectType]? = nil, deviceType: AVCaptureDevice.DeviceType = .builtInWideAngleCamera) throws {
 
         debugPrint("camera init")
         
@@ -151,11 +144,12 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
         self.captureSession = AVCaptureSession()
         self.captureSession.beginConfiguration()
         captureSession.sessionPreset = sessionPreset
+        self.deviceType = deviceType
 
         if let cameraDevice = cameraDevice {
             self.inputCamera = cameraDevice
         } else {
-            if let device = location.device() {
+            if let device = location.device(deviceType) {
                 self.inputCamera = device
             } else {
                 self.videoInput = nil
@@ -256,6 +250,32 @@ public class Camera: NSObject, ImageSource, AVCaptureVideoDataOutputSampleBuffer
     func configureStabilization() {
         let stableMode = (location == .backFacing ? backCameraStableMode : frontCameraStableMode)
         Camera.updateVideoOutput(location: location, videoOutput: videoOutput, stableMode:stableMode)
+    }
+    
+    func configureDeviceInput() {
+        guard let device = location.device(deviceType) else {
+            fatalError("ERROR: Can't find video devices for \(location)")
+        }
+        
+        do {
+            let newVideoInput = try AVCaptureDeviceInput(device: device)
+            captureSession.beginConfiguration()
+            
+            captureSession.removeInput(videoInput)
+            if captureSession.canAddInput(newVideoInput) {
+                inputCamera = device
+                captureSession.addInput(newVideoInput)
+                videoInput = newVideoInput
+                configureStabilization()
+            } else {
+                print("Can't add video input")
+                captureSession.addInput(videoInput)
+            }
+            
+            captureSession.commitConfiguration()
+        } catch let error {
+            fatalError("ERROR: Could not init device: \(error)")
+        }
     }
     
     deinit {
