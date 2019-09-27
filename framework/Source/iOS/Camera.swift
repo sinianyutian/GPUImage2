@@ -37,24 +37,20 @@ public enum PhysicalCameraLocation {
     }
     
     public func device(_ type: AVCaptureDevice.DeviceType) -> AVCaptureDevice? {
-        if #available(iOS 13.0, *) {
-            if let matchedDevice = AVCaptureDevice.DiscoverySession(deviceTypes: [type], mediaType: .video, position: captureDevicePosition()).devices.first {
-                return matchedDevice
-            }
-            // Or use default wideAngleCamera
-            return AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: captureDevicePosition()).devices.first
-        } else {
-            // Fallback on earlier versions
-            let devices = AVCaptureDevice.devices(for: .video)
-            for device in devices {
-                
-                if (device.position == self.captureDevicePosition()) {
-                    return device
-                }
-            }
-            
-            return AVCaptureDevice.default(for: .video)
+        if let matchedDevice = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [type],
+            mediaType: .video,
+            position: captureDevicePosition()).devices.first {
+            return matchedDevice
         }
+
+        // Or use default wideAngleCamera
+        if let device = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: captureDevicePosition()).devices.first {
+            return device
+        }
+
+        // or fallback to old logic
+        return AVCaptureDevice.default(for: .video)
     }
 }
 
