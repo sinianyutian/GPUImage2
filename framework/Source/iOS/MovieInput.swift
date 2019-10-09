@@ -160,11 +160,13 @@ public class MovieInput: ImageSource {
     public func cancel() {
         self.currentThread?.cancel()
         self.currentThread = nil
+        synchronizedEncodingDebugPrint("MovieInput cancel")
     }
     
     public func pause() {
         self.cancel()
         self.requestedStartTime = self.currentTime
+        synchronizedEncodingDebugPrint("MovieInput pause")
     }
     
     public func pauseWithoutCancel() {
@@ -172,6 +174,7 @@ public class MovieInput: ImageSource {
         conditionLock.lock()
         readingShouldWait = true
         conditionLock.unlock()
+        synchronizedEncodingDebugPrint("MovieInput pauseWithoutCancel")
     }
     
     public func resume() {
@@ -179,6 +182,7 @@ public class MovieInput: ImageSource {
         readingShouldWait = false
         conditionLock.signal()
         conditionLock.unlock()
+        synchronizedEncodingDebugPrint("MovieInput resume")
     }
     
     // MARK: -
