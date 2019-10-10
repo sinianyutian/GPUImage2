@@ -336,6 +336,9 @@ public class MovieInput: ImageSource {
                     self.synchronizedEncodingDebugPrint("MovieInput total frames sent: \(self.totalFramesSent)")
                     self.delegate?.didFinishMovie()
                     self.completion?(nil)
+                    if thread.isCancelled && self.synchronizedMovieOutput != nil {
+                        self.synchronizedMovieOutput?.cancelRecording()
+                    }
                 }
             }
         }
