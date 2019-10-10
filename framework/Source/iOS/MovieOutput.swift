@@ -232,7 +232,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 // the session's samples (that is, no samples will be edited out at the end)."
                 self.assetWriter.endSession(atSourceTime: lastFrame)
             }
-            self.pendingAudioBuffers.removeAll()
+            self.movieProcessingContext.runOperationAsynchronously { [weak self] in
+                self?.pendingAudioBuffers.removeAll()
+            }
             
             if let lastFrame = self.previousFrameTime, let startFrame = self.startFrameTime {
                 self.recordedDuration = lastFrame - startFrame
@@ -257,7 +259,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             self.videoEncodingIsFinished = true
             
             self.isRecording = false
-            self.pendingAudioBuffers.removeAll()
+            self.movieProcessingContext.runOperationAsynchronously { [weak self] in
+                self?.pendingAudioBuffers.removeAll()
+            }
             
             self.assetWriter.cancelWriting()
             completionCallback?()
