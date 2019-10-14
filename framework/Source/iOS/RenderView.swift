@@ -135,7 +135,7 @@ public class RenderView:UIView, ImageConsumer {
         return true
     }
     
-    func destroyDisplayFramebuffer() {
+    public func destroyDisplayFramebuffer() {
         if let displayFramebuffer = self.displayFramebuffer {
             var temporaryFramebuffer = displayFramebuffer
             glDeleteFramebuffers(1, &temporaryFramebuffer)

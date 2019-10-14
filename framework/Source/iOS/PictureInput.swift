@@ -24,7 +24,7 @@ public enum PictureInputError: Error, CustomStringConvertible {
 
 public class PictureInput: ImageSource {
     public let targets = TargetContainer()
-    var imageFramebuffer:Framebuffer?
+    public var imageFramebuffer:Framebuffer?
     public var framebufferUserInfo:[AnyHashable:Any]?
     var hasProcessedImage:Bool = false
     
