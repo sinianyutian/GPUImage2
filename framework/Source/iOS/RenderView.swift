@@ -51,12 +51,14 @@ public class RenderView:UIView, ImageConsumer {
     override public var bounds: CGRect {
         didSet {
             // Check if the size changed
-            if(oldValue.size != self.bounds.size) {
-                // Destroy the displayFramebuffer so we render at the correct size for the next frame
-                sharedImageProcessingContext.runOperationAsynchronously{
-                    self.destroyDisplayFramebuffer()
-                }
-            }
+           destroyFramebufferOnSizeChanged(oldSize: oldValue.size, newSize: self.bounds.size)
+        }
+    }
+    
+    override public var frame: CGRect {
+        didSet {
+            // Check if the size changed
+            destroyFramebufferOnSizeChanged(oldSize: oldValue.size, newSize: self.frame.size)
         }
     }
     
@@ -135,7 +137,7 @@ public class RenderView:UIView, ImageConsumer {
         return true
     }
     
-    public func destroyDisplayFramebuffer() {
+    func destroyDisplayFramebuffer() {
         if let displayFramebuffer = self.displayFramebuffer {
             var temporaryFramebuffer = displayFramebuffer
             glDeleteFramebuffers(1, &temporaryFramebuffer)
@@ -145,6 +147,15 @@ public class RenderView:UIView, ImageConsumer {
             var temporaryRenderbuffer = displayRenderbuffer
             glDeleteRenderbuffers(1, &temporaryRenderbuffer)
             self.displayRenderbuffer = nil
+        }
+    }
+    
+    func destroyFramebufferOnSizeChanged(oldSize: CGSize, newSize: CGSize) {
+        if(oldSize != newSize) {
+            // Destroy the displayFramebuffer so we render at the correct size for the next frame
+            sharedImageProcessingContext.runOperationAsynchronously{
+                self.destroyDisplayFramebuffer()
+            }
         }
     }
     
