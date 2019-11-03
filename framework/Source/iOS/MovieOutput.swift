@@ -158,8 +158,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         let block = { () -> Void in
             do {
                 guard self.assetWriter.status != .cancelled else {
-                    completionCallback?(false, MovieOutputError.startWritingError(assetWriterError: nil))
-                    return
+                    throw MovieOutputError.startWritingError(assetWriterError: nil)
                 }
                 
                 let observation = self.assetWriter.observe(\.error) { [weak self] writer, _ in
@@ -195,11 +194,13 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 
                 self.isRecording = true
                 
-                self.synchronizedEncodingDebugPrint("MovieOutput started writing")
+                debugPrint("MovieOutput started writing")
                 
                 completionCallback?(true, nil)
             } catch {
                 self.assetWriter.cancelWriting()
+                
+                debugPrint("MovieOutput failed to start writing. error:\(error)")
                 
                 completionCallback?(false, error)
             }
@@ -242,8 +243,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             self.assetWriter.finishWriting {
                 completionCallback?()
             }
-            self.synchronizedEncodingDebugPrint("MovieOutput finished writing")
-            self.synchronizedEncodingDebugPrint("MovieOutput total frames appended: \(self.totalFramesAppended)")
+            debugPrint("MovieOutput finished writing. Total frames appended:\(self.totalFramesAppended)")
         }
     }
     
@@ -265,7 +265,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             self.assetWriter.cancelWriting()
             completionCallback?()
-            self.synchronizedEncodingDebugPrint("MovieOutput cancel writing")
+            debugPrint("MovieOutput cancel writing")
         }
     }
     
