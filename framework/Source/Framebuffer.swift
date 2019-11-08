@@ -254,6 +254,7 @@ public extension Size {
 }
 
 #if DEBUG
+import UIKit
 public extension Framebuffer {
     func debugUIImage() -> UIImage? {
         let bufferSize = Int(size.width * size.height * 4)

@@ -83,7 +83,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     deinit {
         observations.forEach { $0.invalidate() }
-        debugPrint("movie output deinit \(assetWriter.outputURL)")
+        print("movie output deinit \(assetWriter.outputURL)")
     }
     var shouldWaitForEncoding: Bool {
         return !encodingLiveVideo || waitUtilDataIsReadyForLiveVideo
@@ -92,7 +92,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil, keepLastPixelBuffer: Bool = false) throws {
 
-        debugPrint("movie output init \(URL)")
+        print("movie output init \(URL)")
 
         imageProcessingShareGroup = sharedImageProcessingContext.context.sharegroup
         let movieProcessingContext = OpenGLContext()
@@ -170,7 +170,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 if let preferredTransform = self.preferredTransform {
                     self.assetWriterVideoInput.transform = preferredTransform
                 }
-                
+                print("MovieOutput starting writing...")
                 var success = false
                 try NSObject.catchException {
                     success = self.assetWriter.startWriting()
@@ -194,13 +194,13 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 
                 self.isRecording = true
                 
-                debugPrint("MovieOutput started writing")
+                print("MovieOutput started writing")
                 
                 completionCallback?(true, nil)
             } catch {
                 self.assetWriter.cancelWriting()
                 
-                debugPrint("MovieOutput failed to start writing. error:\(error)")
+                print("MovieOutput failed to start writing. error:\(error)")
                 
                 completionCallback?(false, error)
             }
@@ -243,7 +243,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             self.assetWriter.finishWriting {
                 completionCallback?()
             }
-            debugPrint("MovieOutput finished writing. Total frames appended:\(self.totalFramesAppended)")
+            print("MovieOutput finished writing. Total frames appended:\(self.totalFramesAppended)")
         }
     }
     
@@ -265,7 +265,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             self.assetWriter.cancelWriting()
             completionCallback?()
-            debugPrint("MovieOutput cancel writing")
+            print("MovieOutput cancel writing")
         }
     }
     
