@@ -96,7 +96,8 @@ public class MoviePlayer: AVPlayer, ImageSource {
     
     deinit {
         debugPrint("movie player deinit \(String(describing: asset))")
-        stop()
+        pause()
+        displayLink?.invalidate()
         _removePlayerObservers()
     }
     
@@ -179,7 +180,9 @@ public class MoviePlayer: AVPlayer, ImageSource {
     public func stop() {
         pause()
         debugPrint("movie player stop \(String(describing: asset))")
-        timeObserversQueue.removeAll()
+        sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
+            self?.timeObserversQueue.removeAll()
+        }
         displayLink?.invalidate()
         displayLink = nil
         isSeeking = false
