@@ -388,7 +388,7 @@ private extension MoviePlayer {
     
     func _notifyTimeObserver(with sampleTime: CMTime) {
         let currentTime = CMTimeGetSeconds(sampleTime)
-        while let lastObserver = timeObserversQueue.last, lastObserver.targetTime <= currentTime {
+        while !timeObserversQueue.isEmpty, let lastObserver = timeObserversQueue.last, lastObserver.targetTime <= currentTime {
             timeObserversQueue.removeLast()
             DispatchQueue.main.async {
                 lastObserver.callback(currentTime)
