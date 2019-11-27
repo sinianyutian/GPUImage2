@@ -199,7 +199,11 @@ public class MoviePlayer: AVPlayer, ImageSource {
         } else {
             nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: .zero, toleranceAfter: .zero, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
         }
-        actuallySeekToTime()
+        if assetDuration <= 0 {
+            print("cannot seek since assetDuration is 0. currentItem:\(String(describing: currentItem))")
+        } else {
+            actuallySeekToTime()
+        }
     }
     
     func actuallySeekToTime() {
@@ -326,7 +330,11 @@ private extension MoviePlayer {
     
     func resumeIfNeeded() {
         guard isReadyToPlay && isPlaying == true && rate != playrate else { return }
-        rate = playrate
+        if nextSeeking != nil {
+            actuallySeekToTime()
+        } else {
+            rate = playrate
+        }
     }
     
     // MARK: -
