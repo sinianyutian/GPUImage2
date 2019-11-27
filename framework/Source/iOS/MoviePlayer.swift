@@ -96,7 +96,8 @@ public class MoviePlayer: AVPlayer, ImageSource {
     
     deinit {
         debugPrint("movie player deinit \(String(describing: asset))")
-        stop()
+        pause()
+        displayLink?.invalidate()
         _removePlayerObservers()
     }
     
@@ -179,7 +180,9 @@ public class MoviePlayer: AVPlayer, ImageSource {
     public func stop() {
         pause()
         debugPrint("movie player stop \(String(describing: asset))")
-        timeObserversQueue.removeAll()
+        sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
+            self?.timeObserversQueue.removeAll()
+        }
         displayLink?.invalidate()
         displayLink = nil
         isSeeking = false
@@ -196,7 +199,11 @@ public class MoviePlayer: AVPlayer, ImageSource {
         } else {
             nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: .zero, toleranceAfter: .zero, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
         }
-        actuallySeekToTime()
+        if assetDuration <= 0 {
+            print("cannot seek since assetDuration is 0. currentItem:\(String(describing: currentItem))")
+        } else {
+            actuallySeekToTime()
+        }
     }
     
     func actuallySeekToTime() {
@@ -323,7 +330,11 @@ private extension MoviePlayer {
     
     func resumeIfNeeded() {
         guard isReadyToPlay && isPlaying == true && rate != playrate else { return }
-        rate = playrate
+        if nextSeeking != nil {
+            actuallySeekToTime()
+        } else {
+            rate = playrate
+        }
     }
     
     // MARK: -
