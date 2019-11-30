@@ -126,7 +126,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         }
         lastPlayerItem = item
         self.disableGPURender = disableGPURender
-        _setupPlayerObservers()
+        _setupPlayerObservers(playerItem: item)
         super.insert(item, after: afterItem)
     }
     
@@ -147,7 +147,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
                 item.add(videoOutput)
                 item.audioTimePitchAlgorithm = .varispeed
             }
-            _setupPlayerObservers()
+            _setupPlayerObservers(playerItem: item)
         } else {
             _removePlayerObservers()
         }
@@ -353,7 +353,7 @@ private extension MoviePlayer {
         }
     }
     
-    func _setupPlayerObservers() {
+    func _setupPlayerObservers(playerItem: AVPlayerItem?) {
         _removePlayerObservers()
         NotificationCenter.default.addObserver(self, selector: #selector(playerDidPlayToEnd), name: .AVPlayerItemDidPlayToEndTime, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(playerStalled), name: .AVPlayerItemPlaybackStalled, object: nil)
@@ -363,9 +363,9 @@ private extension MoviePlayer {
         observations.append(observe(\.rate) { [weak self] _, _ in
             self?.playerRateDidChange()
         })
-        if let playerItem = currentItem {
-            observations.append(playerItem.observe(\AVPlayerItem.status) { [weak self] _, _ in
-                self?.playerItemStatusDidChange()
+        if let item = playerItem {
+            observations.append(item.observe(\AVPlayerItem.status) { [weak self] _, _ in
+                self?.playerItemStatusDidChange(item)
             })
         }
     }
@@ -409,9 +409,11 @@ private extension MoviePlayer {
         resumeIfNeeded()
     }
     
-    func playerItemStatusDidChange() {
-        debugPrint("PlayerItem status change to:\(String(describing: currentItem?.status.rawValue)) asset:\(String(describing: asset))")
-        resumeIfNeeded()
+    func playerItemStatusDidChange(_ playerItem: AVPlayerItem) {
+        debugPrint("PlayerItem status change to:\(playerItem.status.rawValue) asset:\(playerItem.asset)")
+        if playerItem == currentItem {
+            resumeIfNeeded()
+        }
     }
     
     func resumeIfNeeded() {
