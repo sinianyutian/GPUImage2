@@ -118,15 +118,13 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     
     public func insert(_ item: AVPlayerItem, after afterItem: AVPlayerItem?, disableGPURender: Bool) {
         if !disableGPURender {
-            let outputSettings = [String(kCVPixelBufferPixelFormatTypeKey) : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
-            let videoOutput = AVPlayerItemVideoOutput(outputSettings: outputSettings)
-            videoOutput.suppressesPlayerRendering = true
-            item.add(videoOutput)
-            item.audioTimePitchAlgorithm = .varispeed
+            _setupPlayerItemVideoOutput(for: item)
         }
+        item.audioTimePitchAlgorithm = .varispeed
         lastPlayerItem = item
         self.disableGPURender = disableGPURender
         _setupPlayerObservers(playerItem: item)
+        print("insert new item:\(item) afterItem:\(String(describing: afterItem)) disableGPURender:\(disableGPURender)")
         super.insert(item, after: afterItem)
     }
     
@@ -141,17 +139,15 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         lastPlayerItem = item
         if let item = item {
             if !disableGPURender {
-                let outputSettings = [String(kCVPixelBufferPixelFormatTypeKey) : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
-                let videoOutput = AVPlayerItemVideoOutput(outputSettings: outputSettings)
-                videoOutput.suppressesPlayerRendering = true
-                item.add(videoOutput)
-                item.audioTimePitchAlgorithm = .varispeed
+                _setupPlayerItemVideoOutput(for: item)
             }
+            item.audioTimePitchAlgorithm = .varispeed
             _setupPlayerObservers(playerItem: item)
         } else {
             _removePlayerObservers()
         }
         self.disableGPURender = disableGPURender
+        print("replace current item with:\(String(describing: item)) disableGPURender:\(disableGPURender)")
         super.replaceCurrentItem(with: item)
     }
     
@@ -165,6 +161,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         } else {
             play()
         }
+        print("replay last item:\(playerItem)")
     }
     
     override public func remove(_ item: AVPlayerItem) {
@@ -351,6 +348,13 @@ private extension MoviePlayer {
             displayLink = CADisplayLink(target: self, selector: #selector(displayLinkCallback))
             displayLink?.add(to: RunLoop.main, forMode: .common)
         }
+    }
+    
+    func _setupPlayerItemVideoOutput(for item: AVPlayerItem) {
+        let outputSettings = [String(kCVPixelBufferPixelFormatTypeKey) : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+        let videoOutput = AVPlayerItemVideoOutput(outputSettings: outputSettings)
+        videoOutput.suppressesPlayerRendering = true
+        item.add(videoOutput)
     }
     
     func _setupPlayerObservers(playerItem: AVPlayerItem?) {
