@@ -38,6 +38,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     public var asset: AVAsset? { return currentItem?.asset }
     public private(set) var isPlaying = false
     public var lastPlayerItem: AVPlayerItem?
+    public var playableItem: AVPlayerItem? { currentItem ?? lastPlayerItem }
     
     var displayLink: CADisplayLink?
     
@@ -124,8 +125,8 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         lastPlayerItem = item
         self.disableGPURender = disableGPURender
         _setupPlayerObservers(playerItem: item)
-        print("insert new item:\(item) afterItem:\(String(describing: afterItem)) disableGPURender:\(disableGPURender)")
         super.insert(item, after: afterItem)
+        print("insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) disableGPURender:\(disableGPURender) itemsCount:\(items().count)")
     }
     
     override public func replaceCurrentItem(with item: AVPlayerItem?) {
@@ -147,7 +148,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             _removePlayerObservers()
         }
         self.disableGPURender = disableGPURender
-        print("replace current item with:\(String(describing: item)) disableGPURender:\(disableGPURender)")
+        print("replace current item with newItem(\(item?.duration.seconds ?? 0)s)):\(String(describing: item)) disableGPURender:\(disableGPURender) itemsCount:\(items().count)")
         super.replaceCurrentItem(with: item)
     }
     
@@ -196,20 +197,13 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     }
     
     public func start() {
-        if actionAtItemEnd == .advance {
-            if let currentItem = currentItem {
-                if didPlayToEnd {
-                    remove(currentItem)
-                    insert(currentItem, after: nil)
-                }
-            } else if let playerItem = lastPlayerItem {
-                insert(playerItem, after: nil)
-            }
+        if actionAtItemEnd == .advance, currentItem == nil, let playerItem = lastPlayerItem {
+            insert(playerItem, after: nil)
         }
         
         guard currentItem != nil else {
-            assert(currentItem != nil)
-            print("ERROR! player hasn't been setup before starting")
+            // Sometime the player.items() seems still 0 even if insert was called, but it won't result in crash, just print a error log for information.
+            print("ERROR! player currentItem is nil")
             return
         }
         isPlaying = true
@@ -224,13 +218,11 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
                 let looper = AVPlayerLooper(player: self, templateItem: playerItem, timeRange: CMTimeRange(start: start, end: end))
                 looperDict[self] = looper
             }
-            rate = playrate
+        }
+        if currentTime().seconds != (startTime ?? 0)  {
+            seekToTime(startTime ?? 0, shouldPlayAfterSeeking: true)
         } else {
-            if let startTime = startTime {
-                seekToTime(startTime, shouldPlayAfterSeeking: true)
-            } else {
-                rate = playrate
-            }
+            rate = playrate
         }
     }
     
