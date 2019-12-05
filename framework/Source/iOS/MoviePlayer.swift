@@ -24,18 +24,19 @@ public struct MoviePlayerTimeObserver {
     }
 }
 
-private var looperDict = [MoviePlayer: AVPlayerLooper]()
-
 public class MoviePlayer: AVQueuePlayer, ImageSource {
+    static var looperDict = [MoviePlayer: AVPlayerLooper]()
     public let targets = TargetContainer()
     public var runBenchmark = false
     public var logEnabled = false
     public weak var delegate: MoviePlayerDelegate?
     public var startTime: TimeInterval?
+    public var actualStartTime: TimeInterval { startTime ?? 0 }
     public var endTime: TimeInterval?
+    public var actualEndTime: TimeInterval { endTime ?? (assetDuration - actualStartTime) }
     /// Whether to loop play.
     public var loop = false
-    public var asset: AVAsset? { return currentItem?.asset }
+    public var asset: AVAsset? { return playableItem?.asset }
     public private(set) var isPlaying = false
     public var lastPlayerItem: AVPlayerItem?
     public var playableItem: AVPlayerItem? { currentItem ?? lastPlayerItem }
@@ -148,17 +149,15 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             _removePlayerObservers()
         }
         self.disableGPURender = disableGPURender
-        print("replace current item with newItem(\(item?.duration.seconds ?? 0)s)):\(String(describing: item)) disableGPURender:\(disableGPURender) itemsCount:\(items().count)")
         super.replaceCurrentItem(with: item)
+        print("replace current item with newItem(\(item?.duration.seconds ?? 0)s)):\(String(describing: item)) disableGPURender:\(disableGPURender) itemsCount:\(items().count)")
     }
     
     public func replayLastItem() {
         guard let playerItem = lastPlayerItem else { return }
-        remove(playerItem)
-        insert(playerItem, after: nil)
-        let start = startTime ?? 0
-        if playerItem.currentTime().seconds != start {
-            seekToTime(start, shouldPlayAfterSeeking: true)
+        replaceCurrentItem(with: playerItem)
+        if playerItem.currentTime().seconds != actualStartTime {
+            seekToTime(actualStartTime, shouldPlayAfterSeeking: true)
         } else {
             play()
         }
@@ -171,6 +170,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     }
     
     override public func removeAllItems() {
+        _stopLoopingIfNeeded(playerItem: currentItem)
         super.removeAllItems()
         print("remove all items")
     }
@@ -212,17 +212,19 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         _resetTimeObservers()
         if loop {
             if let playerItem = lastPlayerItem {
-                looperDict[self]?.disableLooping()
-                let start = CMTime(seconds: startTime ?? 0, preferredTimescale: 600)
-                let end = CMTime(seconds: endTime ?? assetDuration, preferredTimescale: 600)
+                MoviePlayer.looperDict[self]?.disableLooping()
+                let start = CMTime(seconds: actualStartTime, preferredTimescale: 600)
+                let end = CMTime(seconds: endTime ?? playerItem.asset.duration.seconds, preferredTimescale: 600)
                 let looper = AVPlayerLooper(player: self, templateItem: playerItem, timeRange: CMTimeRange(start: start, end: end))
-                looperDict[self] = looper
+                MoviePlayer.looperDict[self] = looper
             }
-        }
-        if currentTime().seconds != (startTime ?? 0)  {
-            seekToTime(startTime ?? 0, shouldPlayAfterSeeking: true)
-        } else {
             rate = playrate
+        } else {
+            if currentTime().seconds != actualStartTime {
+                seekToTime(actualStartTime, shouldPlayAfterSeeking: true)
+            } else {
+                rate = playrate
+            }
         }
     }
     
@@ -249,8 +251,8 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         displayLink = nil
         isSeeking = false
         nextSeeking = nil
-        looperDict[self]?.disableLooping()
-        looperDict[self] = nil
+        MoviePlayer.looperDict[self]?.disableLooping()
+        MoviePlayer.looperDict[self] = nil
     }
     
     public func seekToTime(_ time: TimeInterval, shouldPlayAfterSeeking: Bool) {
@@ -339,6 +341,14 @@ private extension MoviePlayer {
         }
     }
     
+    func _stopLoopingIfNeeded(playerItem: AVPlayerItem?) {
+        if loop, playerItem == currentItem, let looper = MoviePlayer.looperDict[self] {
+            looper.disableLooping()
+            MoviePlayer.looperDict[self] = nil
+            print("stop looping item:\(String(describing: playerItem))")
+        }
+    }
+    
     func _setupPlayerItemVideoOutput(for item: AVPlayerItem) {
         let outputSettings = [String(kCVPixelBufferPixelFormatTypeKey) : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
         let videoOutput = AVPlayerItemVideoOutput(outputSettings: outputSettings)
@@ -386,7 +396,7 @@ private extension MoviePlayer {
             guard let self = self else { return }
             self.timeObserversQueue.removeAll()
             for observer in self.totalTimeObservers {
-                guard observer.targetTime >= (self.startTime ?? 0) && observer.targetTime <= self.endTime ?? self.assetDuration else {
+                guard observer.targetTime >= self.actualStartTime && observer.targetTime <= self.actualEndTime else {
                     continue
                 }
                 self.timeObserversQueue.append(observer)
@@ -463,11 +473,7 @@ private extension MoviePlayer {
     }
     
     @objc func displayLinkCallback(displayLink: CADisplayLink) {
-        guard currentItem != nil else {
-            stop()
-            return
-        }
-        
+        guard currentItem?.status == .readyToPlay else { return }
         let playTime = currentTime()
 //        debugPrint("playtime:\(playTime.seconds)")
         guard playTime.seconds > 0 else { return }
@@ -492,8 +498,6 @@ private extension MoviePlayer {
     @objc func playerDidPlayToEnd(notification: Notification) {
         print("player did play to end. notification:\(notification)")
         guard (notification.object as? AVPlayerItem) == currentItem else { return }
-        guard loop && isPlaying && (endTime == nil || currentTime().seconds == assetDuration) else { return }
-        start()
     }
     
     @objc func playerStalled(notification: Notification) {
