@@ -65,6 +65,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     public var didPlayToEnd: Bool {
         return currentTime().seconds >= assetDuration
     }
+    public var hasTarget: Bool { targets.count > 0 }
     
     var framebufferUserInfo: [AnyHashable:Any]?
     var observations = [NSKeyValueObservation]()
@@ -84,20 +85,14 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     }
     var nextSeeking: SeekingInfo?
     public var isSeeking = false
-    public var disableGPURender = false
+    public var enableVideoOutput = false
+    private var isProcessing = false
     
     public override init() {
         print("movie player init")
         // Make sure player it intialized on the main thread, or it might cause KVO crash
         assert(Thread.isMainThread)
         super.init()
-    }
-    
-    override public init(playerItem item: AVPlayerItem?) {
-        // Make sure player it intialized on the main thread, or it might cause KVO crash
-        assert(Thread.isMainThread)
-        super.init(playerItem: item)
-        replaceCurrentItem(with: item)
     }
     
     deinit {
@@ -109,38 +104,42 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     
     // MARK: Data Source
     public func replaceCurrentItem(with url: URL) {
+        replaceCurrentItem(with: url, enableVideoOutput: enableVideoOutput)
+    }
+    
+    public func replaceCurrentItem(with url: URL, enableVideoOutput: Bool) {
         let inputAsset = AVURLAsset(url: url)
         let playerItem = AVPlayerItem(asset: inputAsset, automaticallyLoadedAssetKeys: [AVURLAssetPreferPreciseDurationAndTimingKey])
-        replaceCurrentItem(with: playerItem)
+        replaceCurrentItem(with: playerItem, enableVideoOutput: enableVideoOutput)
     }
     
     override public func insert(_ item: AVPlayerItem, after afterItem: AVPlayerItem?) {
-        insert(item, after: afterItem, disableGPURender: disableGPURender)
+        insert(item, after: afterItem, enableVideoOutput: enableVideoOutput)
     }
     
-    public func insert(_ item: AVPlayerItem, after afterItem: AVPlayerItem?, disableGPURender: Bool) {
-        if !disableGPURender {
+    public func insert(_ item: AVPlayerItem, after afterItem: AVPlayerItem?, enableVideoOutput: Bool) {
+        if enableVideoOutput {
             _setupPlayerItemVideoOutput(for: item)
         }
         item.audioTimePitchAlgorithm = .varispeed
         lastPlayerItem = item
-        self.disableGPURender = disableGPURender
+        self.enableVideoOutput = enableVideoOutput
         _setupPlayerObservers(playerItem: item)
         super.insert(item, after: afterItem)
-        print("insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) disableGPURender:\(disableGPURender) itemsCount:\(items().count)")
+        print("insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) enableVideoOutput:\(enableVideoOutput) itemsCount:\(items().count)")
     }
     
     override public func replaceCurrentItem(with item: AVPlayerItem?) {
-        replaceCurrentItem(with: item, disableGPURender: disableGPURender)
+        replaceCurrentItem(with: item, enableVideoOutput: enableVideoOutput)
     }
     
-    public func replaceCurrentItem(with item: AVPlayerItem?, disableGPURender: Bool) {
+    public func replaceCurrentItem(with item: AVPlayerItem?, enableVideoOutput: Bool) {
         if isPlaying {
             stop()
         }
         lastPlayerItem = item
         if let item = item {
-            if !disableGPURender {
+            if enableVideoOutput {
                 _setupPlayerItemVideoOutput(for: item)
             }
             item.audioTimePitchAlgorithm = .varispeed
@@ -148,9 +147,9 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         } else {
             _removePlayerObservers()
         }
-        self.disableGPURender = disableGPURender
+        self.enableVideoOutput = enableVideoOutput
         super.replaceCurrentItem(with: item)
-        print("replace current item with newItem(\(item?.duration.seconds ?? 0)s)):\(String(describing: item)) disableGPURender:\(disableGPURender) itemsCount:\(items().count)")
+        print("replace current item with newItem(\(item?.duration.seconds ?? 0)s)):\(String(describing: item)) enableVideoOutput:\(enableVideoOutput) itemsCount:\(items().count)")
     }
     
     public func replayLastItem() {
@@ -466,7 +465,7 @@ private extension MoviePlayer {
             }
         }
         
-        guard !disableGPURender, let framebuffer = framebufferGenerator.generateFromYUVBuffer(pixelBuffer, frameTime: playTime, videoOrientation: videoOrientation) else { return }
+        guard hasTarget, let framebuffer = framebufferGenerator.generateFromYUVBuffer(pixelBuffer, frameTime: playTime, videoOrientation: videoOrientation) else { return }
         framebuffer.userInfo = framebufferUserInfo
         
         updateTargetsWithFramebuffer(framebuffer)
@@ -475,19 +474,18 @@ private extension MoviePlayer {
     @objc func displayLinkCallback(displayLink: CADisplayLink) {
         guard currentItem?.status == .readyToPlay else { return }
         let playTime = currentTime()
-//        debugPrint("playtime:\(playTime.seconds)")
         guard playTime.seconds > 0 else { return }
-        if let videoOutput = videoOutput, videoOutput.hasNewPixelBuffer(forItemTime: playTime) == true {
-            if !disableGPURender {
-                sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
-                    self?._process(videoOutput: videoOutput, at: playTime)
-                }
-            } else {
-                _process(videoOutput: videoOutput, at: playTime)
+        
+        _notifyTimeObserver(with: playTime)
+        
+        guard !isProcessing else { return }
+        guard let videoOutput = videoOutput, videoOutput.hasNewPixelBuffer(forItemTime: playTime) == true else { return }
+        isProcessing = true
+        sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
+            defer {
+                self?.isProcessing = false
             }
-        }
-        if playTime.seconds > 0 {
-            _notifyTimeObserver(with: playTime)
+            self?._process(videoOutput: videoOutput, at: playTime)
         }
     }
     
