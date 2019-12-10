@@ -97,9 +97,9 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     
     deinit {
         print("movie player deinit \(String(describing: asset))")
+        assert(observations.isEmpty, "observers must be removed before deinit")
         pause()
         displayLink?.invalidate()
-        _removePlayerObservers()
     }
     
     // MARK: Data Source
@@ -269,6 +269,12 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         } else {
             actuallySeekToTime()
         }
+    }
+    
+    /// Cleanup all player resource and observers. This must be called before deinit, or it might crash on iOS 10 due to observation assertion.
+    public func cleanup() {
+        stop()
+        _removePlayerObservers()
     }
     
     func actuallySeekToTime() {
