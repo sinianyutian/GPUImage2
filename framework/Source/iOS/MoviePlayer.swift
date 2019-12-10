@@ -138,6 +138,10 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             stop()
         }
         lastPlayerItem = item
+        // Stop looping before replacing
+        if loop && MoviePlayer.looperDict[self] != nil {
+            removeAllItems()
+        }
         if let item = item {
             if enableVideoOutput {
                 _setupPlayerItemVideoOutput(for: item)
@@ -169,7 +173,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     }
     
     override public func removeAllItems() {
-        _stopLoopingIfNeeded(playerItem: currentItem)
+        _stopLoopingIfNeeded()
         super.removeAllItems()
         print("remove all items")
     }
@@ -346,11 +350,11 @@ private extension MoviePlayer {
         }
     }
     
-    func _stopLoopingIfNeeded(playerItem: AVPlayerItem?) {
-        if loop, playerItem == currentItem, let looper = MoviePlayer.looperDict[self] {
+    func _stopLoopingIfNeeded() {
+        if loop, let looper = MoviePlayer.looperDict[self] {
             looper.disableLooping()
             MoviePlayer.looperDict[self] = nil
-            print("stop looping item:\(String(describing: playerItem))")
+            print("stop looping item)")
         }
     }
     
