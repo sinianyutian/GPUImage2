@@ -111,7 +111,7 @@ class WeakImageConsumer {
 public class TargetContainer:Sequence {
     private var targets = [WeakImageConsumer]()
     
-    private var count:Int { get { return targets.count } }
+    var count:Int { get { return targets.count } }
 
 #if !os(Linux)
     let dispatchQueue = DispatchQueue(label:"com.sunsetlakesoftware.GPUImage.targetContainerQueue", attributes: [])
@@ -255,3 +255,26 @@ public class ImageRelay: ImageProcessingOperation {
         }
     }
 }
+
+#if DEBUG
+public extension ImageSource {
+    var debugPipelineNext: String {
+        let nextInfos: [String] = targets.map {
+            if let operationGroup = $0.0 as? OperationGroup {
+                return operationGroup.inputImageRelay.debugPipelineNext
+            } else if let operation = $0.0 as? ImageProcessingOperation {
+                return operation.debugPipelineNext
+            } else {
+                return $0.0.debugPipelineEnd
+            }
+        }
+        return "{'\(self)':[\(nextInfos.joined(separator: ","))]}"
+    }
+}
+
+public extension ImageConsumer {
+    var debugPipelineEnd: String {
+        return "'\(self)'"
+    }
+}
+#endif
