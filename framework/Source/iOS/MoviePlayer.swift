@@ -486,11 +486,11 @@ private extension MoviePlayer {
         let playTime = currentTime()
         guard playTime.seconds > 0 else { return }
         
-        guard !isProcessing else {
+        guard let videoOutput = videoOutput else {
             _notifyTimeObserver(with: playTime)
             return
         }
-        guard let videoOutput = videoOutput, videoOutput.hasNewPixelBuffer(forItemTime: playTime) == true else { return }
+        guard !isProcessing, videoOutput.hasNewPixelBuffer(forItemTime: playTime) == true else { return }
         isProcessing = true
         sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
             defer {
