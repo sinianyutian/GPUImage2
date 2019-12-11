@@ -486,9 +486,10 @@ private extension MoviePlayer {
         let playTime = currentTime()
         guard playTime.seconds > 0 else { return }
         
-        _notifyTimeObserver(with: playTime)
-        
-        guard !isProcessing else { return }
+        guard !isProcessing else {
+            _notifyTimeObserver(with: playTime)
+            return
+        }
         guard let videoOutput = videoOutput, videoOutput.hasNewPixelBuffer(forItemTime: playTime) == true else { return }
         isProcessing = true
         sharedImageProcessingContext.runOperationAsynchronously { [weak self] in
@@ -496,6 +497,7 @@ private extension MoviePlayer {
                 self?.isProcessing = false
             }
             self?._process(videoOutput: videoOutput, at: playTime)
+            self?._notifyTimeObserver(with: playTime)
         }
     }
     
