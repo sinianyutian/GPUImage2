@@ -87,6 +87,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     public var isSeeking = false
     public var enableVideoOutput = false
     private var isProcessing = false
+    private var needAddItemAfterDidEndNotify = false
     
     public override init() {
         print("movie player init")
@@ -125,7 +126,11 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         lastPlayerItem = item
         self.enableVideoOutput = enableVideoOutput
         _setupPlayerObservers(playerItem: item)
-        super.insert(item, after: afterItem)
+        if shouldDelayAddPlayerItem {
+            needAddItemAfterDidEndNotify = true
+        } else {
+            super.insert(item, after: afterItem)
+        }
         print("insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) enableVideoOutput:\(enableVideoOutput) itemsCount:\(items().count)")
     }
     
@@ -134,9 +139,6 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     }
     
     public func replaceCurrentItem(with item: AVPlayerItem?, enableVideoOutput: Bool) {
-        if isPlaying {
-            stop()
-        }
         lastPlayerItem = item
         // Stop looping before replacing
         if loop && MoviePlayer.looperDict[self] != nil {
@@ -152,7 +154,11 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             _removePlayerObservers()
         }
         self.enableVideoOutput = enableVideoOutput
-        super.replaceCurrentItem(with: item)
+        if shouldDelayAddPlayerItem {
+            needAddItemAfterDidEndNotify = true
+        } else {
+            super.replaceCurrentItem(with: item)
+        }
         print("replace current item with newItem(\(item?.duration.seconds ?? 0)s)):\(String(describing: item)) enableVideoOutput:\(enableVideoOutput) itemsCount:\(items().count)")
     }
     
@@ -210,6 +216,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             return
         }
         isPlaying = true
+        isProcessing = false
         print("movie player start duration:\(String(describing: asset?.duration.seconds)) \(String(describing: asset))")
         _setupDisplayLinkIfNeeded()
         _resetTimeObservers()
@@ -505,9 +512,24 @@ private extension MoviePlayer {
         return currentItem?.outputs.first(where: { $0 is AVPlayerItemVideoOutput }) as? AVPlayerItemVideoOutput
     }
     
+    /// Wait for didPlayToEnd notification and add a new playerItem.
+    var shouldDelayAddPlayerItem: Bool {
+        // NOTE: AVQueuePlayer will remove new added item immediately after inserting if last item has already played to end.
+        // The workaround solution is to add new item after playerDidPlayToEnd notification.
+        return didPlayToEnd && items().count == 1 && !loop
+    }
+    
     @objc func playerDidPlayToEnd(notification: Notification) {
-        print("player did play to end. notification:\(notification)")
+        print("player did play to end. notification:\(notification) items:\(items())")
         guard (notification.object as? AVPlayerItem) == currentItem else { return }
+        if needAddItemAfterDidEndNotify && isPlaying {
+            DispatchQueue.main.async() { [weak self] in
+                guard let self = self else { return }
+                self.needAddItemAfterDidEndNotify = false
+                self.lastPlayerItem.map { self.insert($0, after: nil) }
+                self.play()
+            }
+        }
     }
     
     @objc func playerStalled(notification: Notification) {
