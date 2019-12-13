@@ -88,6 +88,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     public var enableVideoOutput = false
     private var isProcessing = false
     private var needAddItemAfterDidEndNotify = false
+    private lazy var pendingNewItems = [AVPlayerItem]()
     
     public override init() {
         print("movie player init")
@@ -128,6 +129,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         _setupPlayerObservers(playerItem: item)
         if shouldDelayAddPlayerItem {
             needAddItemAfterDidEndNotify = true
+            pendingNewItems.append(item)
         } else {
             super.insert(item, after: afterItem)
         }
@@ -154,8 +156,9 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             _removePlayerObservers()
         }
         self.enableVideoOutput = enableVideoOutput
-        if shouldDelayAddPlayerItem {
+        if shouldDelayAddPlayerItem && item != nil {
             needAddItemAfterDidEndNotify = true
+            pendingNewItems.append(item!)
         } else {
             super.replaceCurrentItem(with: item)
         }
@@ -284,6 +287,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     
     /// Cleanup all player resource and observers. This must be called before deinit, or it might crash on iOS 10 due to observation assertion.
     public func cleanup() {
+        pendingNewItems.removeAll()
         stop()
         _removePlayerObservers()
     }
@@ -522,12 +526,14 @@ private extension MoviePlayer {
     @objc func playerDidPlayToEnd(notification: Notification) {
         print("player did play to end. notification:\(notification) items:\(items())")
         guard (notification.object as? AVPlayerItem) == currentItem else { return }
-        if needAddItemAfterDidEndNotify && isPlaying {
+        if needAddItemAfterDidEndNotify {
             DispatchQueue.main.async() { [weak self] in
                 guard let self = self else { return }
                 self.needAddItemAfterDidEndNotify = false
-                self.lastPlayerItem.map { self.insert($0, after: nil) }
-                self.play()
+                self.pendingNewItems.forEach { self.insert($0, after: nil) }
+                if self.isPlaying {
+                    self.play()
+                }
             }
         }
     }
