@@ -531,6 +531,7 @@ private extension MoviePlayer {
                 guard let self = self else { return }
                 self.needAddItemAfterDidEndNotify = false
                 self.pendingNewItems.forEach { self.insert($0, after: nil) }
+                self.pendingNewItems.removeAll()
                 if self.isPlaying {
                     self.play()
                 }
