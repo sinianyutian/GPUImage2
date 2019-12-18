@@ -34,6 +34,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     public var actualStartTime: TimeInterval { startTime ?? 0 }
     public var endTime: TimeInterval?
     public var actualEndTime: TimeInterval { endTime ?? (assetDuration - actualStartTime) }
+    public var actualDuration: TimeInterval { actualEndTime - actualStartTime }
     /// Whether to loop play.
     public var loop = false
     public var asset: AVAsset? { return playableItem?.asset }
@@ -89,6 +90,10 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     private var isProcessing = false
     private var needAddItemAfterDidEndNotify = false
     private lazy var pendingNewItems = [AVPlayerItem]()
+    private var shouldUseLooper: Bool {
+        // NOTE: if video duration too short, it will cause OOM. So it is better to use "actionItemAtEnd=.none + playToEnd + seek" solution.
+        return false
+    }
     
     public override init() {
         print("movie player init")
@@ -131,6 +136,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             needAddItemAfterDidEndNotify = true
             pendingNewItems.append(item)
         } else {
+            remove(item)
             super.insert(item, after: afterItem)
         }
         print("insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) enableVideoOutput:\(enableVideoOutput) itemsCount:\(items().count)")
@@ -223,7 +229,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         print("movie player start duration:\(String(describing: asset?.duration.seconds)) \(String(describing: asset))")
         _setupDisplayLinkIfNeeded()
         _resetTimeObservers()
-        if loop {
+        if shouldUseLooper {
             if let playerItem = lastPlayerItem {
                 MoviePlayer.looperDict[self]?.disableLooping()
                 let start = CMTime(seconds: actualStartTime, preferredTimescale: 600)
@@ -233,6 +239,9 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             }
             rate = playrate
         } else {
+            if loop {
+                actionAtItemEnd = .none
+            }
             if currentTime().seconds != actualStartTime {
                 seekToTime(actualStartTime, shouldPlayAfterSeeking: true)
             } else {
@@ -370,6 +379,7 @@ private extension MoviePlayer {
     }
     
     func _setupPlayerItemVideoOutput(for item: AVPlayerItem) {
+        guard !item.outputs.contains(where: { $0 is AVPlayerItemVideoOutput }) else { return }
         let outputSettings = [String(kCVPixelBufferPixelFormatTypeKey) : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
         let videoOutput = AVPlayerItemVideoOutput(outputSettings: outputSettings)
         videoOutput.suppressesPlayerRendering = true
@@ -421,18 +431,24 @@ private extension MoviePlayer {
                 }
                 self.timeObserversQueue.append(observer)
             }
-            if !self.loop, let endTime = self.endTime {
+            if !self.shouldUseLooper, let endTime = self.endTime {
                 let endTimeObserver = MoviePlayerTimeObserver(targetTime: endTime) { [weak self] _ in
-                    if self?.loop == true && self?.isPlaying == true {
-                        self?.pause()
-                        self?.start()
-                    } else {
-                        self?.pause()
-                    }
+                    self?.onCurrentItemPlayToEnd()
                 }
                 let insertIndex: Int = self.timeObserversQueue.reversed().firstIndex { endTime < $0.targetTime } ?? 0
                 self.timeObserversQueue.insert(endTimeObserver, at: insertIndex)
             }
+        }
+    }
+    
+    func onCurrentItemPlayToEnd() {
+        if loop == true && isPlaying == true {
+            // calling start() directly will cause recursive method call
+            DispatchQueue.main.async { [weak self] in
+                self?.start()
+            }
+        } else {
+            pause()
         }
     }
     
@@ -520,7 +536,7 @@ private extension MoviePlayer {
     var shouldDelayAddPlayerItem: Bool {
         // NOTE: AVQueuePlayer will remove new added item immediately after inserting if last item has already played to end.
         // The workaround solution is to add new item after playerDidPlayToEnd notification.
-        return didPlayToEnd && items().count == 1 && !loop
+        return didPlayToEnd && items().count == 1 && !shouldUseLooper
     }
     
     @objc func playerDidPlayToEnd(notification: Notification) {
@@ -535,6 +551,10 @@ private extension MoviePlayer {
                 if self.isPlaying {
                     self.play()
                 }
+            }
+        } else {
+            DispatchQueue.main.async() { [weak self] in
+                self?.onCurrentItemPlayToEnd()
             }
         }
     }
