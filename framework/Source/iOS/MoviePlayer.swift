@@ -90,6 +90,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     private var isProcessing = false
     private var needAddItemAfterDidEndNotify = false
     private lazy var pendingNewItems = [AVPlayerItem]()
+    private var pendingSeekInfo: SeekingInfo?
     private var shouldUseLooper: Bool {
         // NOTE: if video duration too short, it will cause OOM. So it is better to use "actionItemAtEnd=.none + playToEnd + seek" solution.
         return false
@@ -149,7 +150,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     public func replaceCurrentItem(with item: AVPlayerItem?, enableVideoOutput: Bool) {
         lastPlayerItem = item
         // Stop looping before replacing
-        if loop && MoviePlayer.looperDict[self] != nil {
+        if shouldUseLooper && MoviePlayer.looperDict[self] != nil {
             removeAllItems()
         }
         if let item = item {
@@ -278,7 +279,10 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     }
     
     public func seekToTime(_ time: TimeInterval, shouldPlayAfterSeeking: Bool) {
-        let targetTime = CMTime(seconds: time, preferredTimescale: 600)
+        seekToTime(CMTime(seconds: time, preferredTimescale: 48000), shouldPlayAfterSeeking: shouldPlayAfterSeeking)
+    }
+    
+    public func seekToTime(_ targetTime: CMTime, shouldPlayAfterSeeking: Bool) {
         if shouldPlayAfterSeeking {
             // 0.1s has 3 frames tolerance for 30 FPS video, it should be enough if there is no sticky video
             let toleranceTime = CMTime(seconds: 0.1, preferredTimescale: 600)
