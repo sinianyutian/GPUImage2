@@ -464,7 +464,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
         
         if(self.encodingLiveVideo) {
-            movieProcessingContext.runOperationAsynchronously(work)
+            movieProcessingContext.runOperationSynchronously(work)
         }
         else {
             work()
@@ -540,7 +540,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
         
         if(self.encodingLiveVideo) {
-            movieProcessingContext.runOperationAsynchronously(work)
+            movieProcessingContext.runOperationSynchronously(work)
         }
         else {
             work()
