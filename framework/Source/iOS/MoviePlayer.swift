@@ -8,16 +8,16 @@
 import AVFoundation
 
 public protocol MoviePlayerDelegate: class {
-    func moviePlayerDidReadPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: TimeInterval)
+    func moviePlayerDidReadPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime)
 }
 
-public typealias MoviePlayerTimeObserverCallback = (TimeInterval) -> Void
+public typealias MoviePlayerTimeObserverCallback = (CMTime) -> Void
 
 public struct MoviePlayerTimeObserver {
-    let targetTime: TimeInterval
+    let targetTime: CMTime
     let callback: MoviePlayerTimeObserverCallback
     let observerID: String
-    init(targetTime: TimeInterval, callback: @escaping MoviePlayerTimeObserverCallback) {
+    init(targetTime: CMTime, callback: @escaping MoviePlayerTimeObserverCallback) {
         self.targetTime = targetTime
         self.callback = callback
         observerID = UUID.init().uuidString
@@ -30,13 +30,14 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     public var runBenchmark = false
     public var logEnabled = false
     public weak var delegate: MoviePlayerDelegate?
-    public var startTime: TimeInterval?
-    public var actualStartTime: TimeInterval { startTime ?? 0 }
-    public var endTime: TimeInterval?
-    public var actualEndTime: TimeInterval { endTime ?? (assetDuration - actualStartTime) }
-    public var actualDuration: TimeInterval { actualEndTime - actualStartTime }
+    public var startTime: CMTime?
+    public var actualStartTime: CMTime { startTime ?? .zero }
+    public var endTime: CMTime?
+    public var actualEndTime: CMTime { endTime ?? CMTimeSubtract(assetDuration, actualStartTime) }
+    public var actualDuration: CMTime { actualEndTime - actualStartTime }
     /// Whether to loop play.
     public var loop = false
+    private var previousPlayerActionAtItemEnd: AVPlayer.ActionAtItemEnd?
     public var asset: AVAsset? { return playableItem?.asset }
     public private(set) var isPlaying = false
     public var lastPlayerItem: AVPlayerItem?
@@ -53,8 +54,8 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     var totalFramesSent = 0
     var totalFrameTime: Double = 0.0
     public var playrate: Float = 1.0
-    public var assetDuration: TimeInterval {
-        return asset?.duration.seconds ?? 0
+    public var assetDuration: CMTime {
+        return asset?.duration ?? .zero
     }
     public var isReadyToPlay: Bool {
         return status == .readyToPlay
@@ -64,7 +65,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         return asset.imageOrientation ?? .portrait
     }
     public var didPlayToEnd: Bool {
-        return currentTime().seconds >= assetDuration
+        return currentTime() >= assetDuration
     }
     public var hasTarget: Bool { targets.count > 0 }
     
@@ -95,6 +96,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         // NOTE: if video duration too short, it will cause OOM. So it is better to use "actionItemAtEnd=.none + playToEnd + seek" solution.
         return false
     }
+    private var didTriggerEndTimeObserver = false
     
     public override init() {
         print("movie player init")
@@ -175,7 +177,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     public func replayLastItem() {
         guard let playerItem = lastPlayerItem else { return }
         replaceCurrentItem(with: playerItem)
-        if playerItem.currentTime().seconds != actualStartTime {
+        if playerItem.currentTime() != actualStartTime {
             seekToTime(actualStartTime, shouldPlayAfterSeeking: true)
         } else {
             play()
@@ -233,9 +235,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         if shouldUseLooper {
             if let playerItem = lastPlayerItem {
                 MoviePlayer.looperDict[self]?.disableLooping()
-                let start = CMTime(seconds: actualStartTime, preferredTimescale: 600)
-                let end = CMTime(seconds: endTime ?? playerItem.asset.duration.seconds, preferredTimescale: 600)
-                let looper = AVPlayerLooper(player: self, templateItem: playerItem, timeRange: CMTimeRange(start: start, end: end))
+                let looper = AVPlayerLooper(player: self, templateItem: playerItem, timeRange: CMTimeRange(start: actualStartTime, end: actualEndTime))
                 MoviePlayer.looperDict[self] = looper
             }
             rate = playrate
@@ -243,7 +243,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             if loop {
                 actionAtItemEnd = .none
             }
-            if currentTime().seconds != actualStartTime {
+            if currentTime() != actualStartTime {
                 seekToTime(actualStartTime, shouldPlayAfterSeeking: true)
             } else {
                 rate = playrate
@@ -291,7 +291,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         } else {
             nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: .zero, toleranceAfter: .zero, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
         }
-        if assetDuration <= 0 {
+        if assetDuration <= .zero {
             print("cannot seek since assetDuration is 0. currentItem:\(String(describing: currentItem))")
         } else {
             actuallySeekToTime()
@@ -332,8 +332,8 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         // Not needed for movie inputs
     }
     
-    public func addTimeObserver(seconds: TimeInterval, callback: @escaping MoviePlayerTimeObserverCallback) -> MoviePlayerTimeObserver {
-        let timeObserver = MoviePlayerTimeObserver(targetTime: seconds, callback: callback)
+    public func addTimeObserver(at time: CMTime, callback: @escaping MoviePlayerTimeObserverCallback) -> MoviePlayerTimeObserver {
+        let timeObserver = MoviePlayerTimeObserver(targetTime: time, callback: callback)
         _timeObserversUpdate { [weak self] in
             guard let self = self else { return }
             self.totalTimeObservers.append(timeObserver)
@@ -341,7 +341,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
                 return lhs.targetTime > rhs.targetTime
             }
             if self.isPlaying {
-                if let lastIndex = self.timeObserversQueue.firstIndex(where: { $0.targetTime >= seconds }) {
+                if let lastIndex = self.timeObserversQueue.firstIndex(where: { $0.targetTime >= time }) {
                     self.timeObserversQueue.insert(timeObserver, at: lastIndex)
                 } else {
                     self.timeObserversQueue.append(timeObserver)
@@ -363,6 +363,24 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             self?.timeObserversQueue.removeAll()
             self?.totalTimeObservers.removeAll()
         }
+    }
+    
+    public func setLoopEnabled(_ enabled: Bool, timeRange: CMTimeRange) {
+        if enabled {
+            if previousPlayerActionAtItemEnd == nil {
+                previousPlayerActionAtItemEnd = actionAtItemEnd
+            }
+            actionAtItemEnd = .none
+            startTime = timeRange.start
+            endTime = timeRange.end
+            assert(timeRange.start >= .zero || timeRange.end > .zero && CMTimeSubtract(timeRange.end, assetDuration) < .zero, "timerange is invalid. timerange:\(timeRange) assetDuration:\(assetDuration)")
+        } else {
+            actionAtItemEnd = previousPlayerActionAtItemEnd ?? .advance
+            startTime = nil
+            endTime = nil
+        }
+        _resetTimeObservers()
+        loop = enabled
     }
 }
 
@@ -426,6 +444,7 @@ private extension MoviePlayer {
     }
     
     func _resetTimeObservers() {
+        didTriggerEndTimeObserver = false
         _timeObserversUpdate { [weak self] in
             guard let self = self else { return }
             self.timeObserversQueue.removeAll()
@@ -435,24 +454,12 @@ private extension MoviePlayer {
                 }
                 self.timeObserversQueue.append(observer)
             }
-            if !self.shouldUseLooper, let endTime = self.endTime {
-                let endTimeObserver = MoviePlayerTimeObserver(targetTime: endTime) { [weak self] _ in
-                    self?.onCurrentItemPlayToEnd()
-                }
-                let insertIndex: Int = self.timeObserversQueue.reversed().firstIndex { endTime < $0.targetTime } ?? 0
-                self.timeObserversQueue.insert(endTimeObserver, at: insertIndex)
-            }
         }
     }
     
     func onCurrentItemPlayToEnd() {
-        if loop == true && isPlaying == true {
-            // calling start() directly will cause recursive method call
-            DispatchQueue.main.async { [weak self] in
-                self?.start()
-            }
-        } else {
-            pause()
+        if loop && isPlaying {
+            start()
         }
     }
     
@@ -486,12 +493,19 @@ private extension MoviePlayer {
     // MARK: Internal processing functions
     
     func _process(videoOutput: AVPlayerItemVideoOutput, at playTime: CMTime) {
-        guard let pixelBuffer = videoOutput.copyPixelBuffer(forItemTime: playTime, itemTimeForDisplay: nil) else {
+        var timeForDisplay: CMTime = .zero
+        guard let pixelBuffer = videoOutput.copyPixelBuffer(forItemTime: playTime, itemTimeForDisplay: &timeForDisplay) else {
             print("Failed to copy pixel buffer at time:\(playTime)")
             return
         }
         
-        delegate?.moviePlayerDidReadPixelBuffer(pixelBuffer, time: CMTimeGetSeconds(playTime))
+        // Out of range when looping, skip process. So that it won't show unexpected frames.
+        if loop && (timeForDisplay < actualStartTime || timeForDisplay >= actualEndTime) {
+            print("Skipped frame at time:\(timeForDisplay.seconds) is larger than range: [\(actualStartTime.seconds), \(actualEndTime.seconds)]")
+            return
+        }
+        
+        delegate?.moviePlayerDidReadPixelBuffer(pixelBuffer, time: timeForDisplay)
         
         let startTime = CFAbsoluteTimeGetCurrent()
         if runBenchmark || logEnabled {
@@ -506,7 +520,7 @@ private extension MoviePlayer {
             }
         }
         
-        guard hasTarget, let framebuffer = framebufferGenerator.generateFromYUVBuffer(pixelBuffer, frameTime: playTime, videoOrientation: videoOrientation) else { return }
+        guard hasTarget, let framebuffer = framebufferGenerator.generateFromYUVBuffer(pixelBuffer, frameTime: timeForDisplay, videoOrientation: videoOrientation) else { return }
         framebuffer.userInfo = framebufferUserInfo
         
         updateTargetsWithFramebuffer(framebuffer)
@@ -569,11 +583,17 @@ private extension MoviePlayer {
     }
     
     func _notifyTimeObserver(with sampleTime: CMTime) {
-        let currentTime = sampleTime.seconds
+        // Directly callback time play to end observer since it needs to be callbacked more timely, ex. seeking to start
+        if sampleTime > actualEndTime && !shouldUseLooper && endTime != nil && !didTriggerEndTimeObserver {
+            didTriggerEndTimeObserver = true
+            onCurrentItemPlayToEnd()
+        }
+        
+        // Other observers might has delay since it needs to wait for main thread
         _timeObserversUpdate { [weak self] in
-            while let lastObserver = self?.timeObserversQueue.last, lastObserver.targetTime <= currentTime {
+            while let lastObserver = self?.timeObserversQueue.last, lastObserver.targetTime <= sampleTime {
                 self?.timeObserversQueue.removeLast()
-                lastObserver.callback(currentTime)
+                lastObserver.callback(sampleTime)
             }
         }
     }
