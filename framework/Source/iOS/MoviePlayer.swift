@@ -500,7 +500,7 @@ private extension MoviePlayer {
         }
         
         // Out of range when looping, skip process. So that it won't show unexpected frames.
-        if loop && (timeForDisplay < actualStartTime || timeForDisplay >= actualEndTime) {
+        if loop && isPlaying && (timeForDisplay < actualStartTime || timeForDisplay >= actualEndTime) {
             print("Skipped frame at time:\(timeForDisplay.seconds) is larger than range: [\(actualStartTime.seconds), \(actualEndTime.seconds)]")
             return
         }
