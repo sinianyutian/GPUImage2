@@ -481,10 +481,10 @@ private extension MoviePlayer {
     }
     
     func resumeIfNeeded() {
-        guard isReadyToPlay && isPlaying == true && rate != playrate else { return }
+        guard isReadyToPlay && isPlaying == true else { return }
         if nextSeeking != nil {
             actuallySeekToTime()
-        } else {
+        } else if rate != playrate {
             rate = playrate
         }
     }
