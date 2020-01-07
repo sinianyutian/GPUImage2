@@ -512,6 +512,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             while(!assetWriterAudioInput.isReadyForMoreMediaData && self.shouldWaitForEncoding && !self.audioEncodingIsFinished) {
                 self.synchronizedEncodingDebugPrint("Audio waiting...")
                 usleep(100000)
+                if !assetWriterAudioInput.isReadyForMoreMediaData {
+                    self.synchronizedEncodingDebugPrint("Audio still not ready, skip this runloop...")
+                    return
+                }
             }
             
             guard self.previousFrameTime != nil else {
@@ -545,6 +549,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         else {
             work()
         }
+    }
+    
+    public func flushPendingAudioBuffers(shouldInvalidateSampleWhenDone: Bool) {
+        guard let lastBuffer = pendingAudioBuffers.popLast() else { return }
+        processAudioBuffer(lastBuffer, shouldInvalidateSampleWhenDone: shouldInvalidateSampleWhenDone)
     }
     
     // Note: This is not used for synchronized encoding, only live video.

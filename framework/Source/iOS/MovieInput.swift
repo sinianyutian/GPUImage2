@@ -445,9 +445,11 @@ public class MovieInput: ImageSource {
     }
     
     func readNextAudioSample(with assetReader: AVAssetReader, from audioTrackOutput:AVAssetReaderOutput) {
+        let shouldInvalidate = !transcodingOnly
         guard let sampleBuffer = audioTrackOutput.copyNextSampleBuffer() else {
             if let movieOutput = self.synchronizedMovieOutput {
                 movieOutput.movieProcessingContext.runOperationAsynchronously {
+                    movieOutput.flushPendingAudioBuffers(shouldInvalidateSampleWhenDone: shouldInvalidate)
                     movieOutput.audioEncodingIsFinished = true
                     movieOutput.assetWriterAudioInput?.markAsFinished()
                 }
@@ -460,10 +462,10 @@ public class MovieInput: ImageSource {
         if let movieOutput = self.synchronizedMovieOutput {
             movieOutput.movieProcessingContext.runOperationAsynchronously { [weak self] in
                 guard let self = self else { return }
-                self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: !self.transcodingOnly)
+                self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: shouldInvalidate)
             }
         } else {
-            audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: !transcodingOnly)
+            audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: shouldInvalidate)
         }
     }
     
