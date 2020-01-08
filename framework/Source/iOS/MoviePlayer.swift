@@ -229,7 +229,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         }
         isPlaying = true
         isProcessing = false
-        print("movie player start duration:\(String(describing: asset?.duration.seconds)) \(String(describing: asset))")
+        print("movie player start duration:\(String(describing: asset?.duration.seconds)) items:\(String(describing: items()))")
         _setupDisplayLinkIfNeeded()
         _resetTimeObservers()
         if shouldUseLooper {
