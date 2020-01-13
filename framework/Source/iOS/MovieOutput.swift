@@ -45,19 +45,18 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     public weak var delegate: MovieOutputDelegate?
     
-    let assetWriter:AVAssetWriter
+    private let assetWriter:AVAssetWriter
     let assetWriterVideoInput:AVAssetWriterInput
     var assetWriterAudioInput:AVAssetWriterInput?
-    
-    let assetWriterPixelBufferInput:AVAssetWriterInputPixelBufferAdaptor
-    let size:Size
-    let colorSwizzlingShader:ShaderProgram
-    private var isRecording = false
+    private let assetWriterPixelBufferInput:AVAssetWriterInputPixelBufferAdaptor
+    public let size: Size
+    private let colorSwizzlingShader:ShaderProgram
+    public private(set) var isRecording = false
     var videoEncodingIsFinished = false
     var audioEncodingIsFinished = false
     var markIsFinishedAfterProcessing = false
     private var startFrameTime: CMTime?
-    public var recordedDuration: CMTime?
+    public private(set) var recordedDuration: CMTime?
     private var previousFrameTime: CMTime?
     var encodingLiveVideo:Bool {
         didSet {
@@ -68,21 +67,21 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     public private(set) var pixelBuffer:CVPixelBuffer? = nil
     public var dropFirstFrames: Int = 0
     public var waitUtilDataIsReadyForLiveVideo = false
-    let keepLastPixelBuffer: Bool
-    var renderFramebuffer:Framebuffer!
+    public let keepLastPixelBuffer: Bool
+    public private(set) var renderFramebuffer:Framebuffer!
     
-    var audioSettings:[String:Any]? = nil
-    var audioSourceFormatHint:CMFormatDescription?
+    public private(set) var audioSettings:[String:Any]? = nil
+    public private(set) var audioSourceFormatHint:CMFormatDescription?
     
-    let movieProcessingContext:OpenGLContext
-    var videoPixelBufferCache = [(CVPixelBuffer, CMTime)]()
-    var videoSampleBufferCache = NSMutableArray()
-    var audioSampleBufferCache = [CMSampleBuffer]()
+    public let movieProcessingContext:OpenGLContext
+    public private(set) var videoPixelBufferCache = [(CVPixelBuffer, CMTime)]()
+    public private(set) var videoSampleBufferCache = NSMutableArray()
+    public private(set) var audioSampleBufferCache = [CMSampleBuffer]()
     public private(set) var cacheBuffersDuration: TimeInterval = 0
-    var isCaching = false
+    public private(set) var isCaching = false
     
     var synchronizedEncodingDebug = false
-    var totalFramesAppended:Int = 0
+    public private(set) var totalFramesAppended:Int = 0
     private var observations = [NSKeyValueObservation]()
     
     deinit {
