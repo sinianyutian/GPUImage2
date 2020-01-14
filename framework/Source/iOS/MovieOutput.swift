@@ -310,7 +310,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             }
         }
 
-        if(self.encodingLiveVideo) {
+        if encodingLiveVideo {
             // This is done asynchronously to reduce the amount of work done on the sharedImageProcessingContext que
             // so we can decrease the risk of frames being dropped by the camera. I believe it is unlikely a backlog of framebuffers will occur
             // since the framebuffers come in much slower than during synchronized encoding.
@@ -421,24 +421,30 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     private func _appendPixelBuffersFromCache() {
         var appendedBufferCount = 0
         do {
-            try NSObject.catchException {
-                // Drain all cached buffers at first
-                if !self.videoPixelBufferCache.isEmpty {
-                    for (_, (buffer, time)) in self.videoPixelBufferCache.enumerated() {
-//                        debugPrint("appending video pixel buffer \(i+1)/\(self.videoPixelBufferCache.count) at:\(time.seconds)")
-                        if (!self.assetWriterPixelBufferInput.append(buffer, withPresentationTime: time)) {
-                            print("WARNING: Trouble appending pixel buffer at time: \(time) \(String(describing: self.assetWriter.error))")
-                            break
-                        }
-                        appendedBufferCount += 1
-                        if(self.synchronizedEncodingDebug) {
-                            self.totalFramesAppended += 1
-                        }
+            // Drain all cached buffers at first
+            if !videoPixelBufferCache.isEmpty {
+                for (_, (buffer, time)) in videoPixelBufferCache.enumerated() {
+                    //                        debugPrint("appending video pixel buffer \(i+1)/\(self.videoPixelBufferCache.count) at:\(time.seconds)")
+                    if !assetWriterVideoInput.isReadyForMoreMediaData {
+                        // Avoid error when calling bufferInput.append
+                        print("WARNING: video input is not ready at time: \(time))")
+                        break
                     }
+                    let bufferInput = assetWriterPixelBufferInput
+                    var appendResult = false
+                    // NOTE: when NSException was triggered within NSObject.catchException, the object inside the block seems cannot be released correctly, so be careful not to trigger error, or directly use "self."
+                    try NSObject.catchException {
+                        appendResult = bufferInput.append(buffer, withPresentationTime: time)
+                    }
+                    if !appendResult {
+                        print("WARNING: Trouble appending pixel buffer at time: \(time) \(String(describing: self.assetWriter.error))")
+                        break
+                    }
+                    appendedBufferCount += 1
+                    self.totalFramesAppended += 1
                 }
             }
-        }
-        catch {
+        } catch {
             print("WARNING: Trouble appending pixel buffer \(error)")
         }
         videoPixelBufferCache.removeFirst(appendedBufferCount)
@@ -541,28 +547,32 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             var appendedBufferCount = 0
             do {
-                try NSObject.catchException {
-                    // Drain all cached buffers at first
-                    for (i, sampleBufferObject) in self.videoSampleBufferCache.enumerated() {
-                        let sampleBuffer = sampleBufferObject as! CMSampleBuffer
-                        let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                        debugPrint("appending video sample buffer \(i+1)/\(self.videoSampleBufferCache.count) at:\(time.seconds)")
-                        guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-                            print("WARNING: Cannot get pixel buffer from sampleBuffer:\(sampleBuffer)")
-                            break
-                        }
-                        if (!self.assetWriterPixelBufferInput.append(buffer, withPresentationTime: time)) {
-                            print("WARNING: Trouble appending pixel buffer at time: \(time) \(String(describing: self.assetWriter.error))")
-                            break
-                        }
-                        appendedBufferCount += 1
-                        if(self.synchronizedEncodingDebug) {
-                            self.totalFramesAppended += 1
-                        }
+                // Drain all cached buffers at first
+                for (i, sampleBufferObject) in self.videoSampleBufferCache.enumerated() {
+                    let sampleBuffer = sampleBufferObject as! CMSampleBuffer
+                    let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                    debugPrint("appending video sample buffer \(i+1)/\(self.videoSampleBufferCache.count) at:\(time.seconds)")
+                    guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+                        print("WARNING: Cannot get pixel buffer from sampleBuffer:\(sampleBuffer)")
+                        break
                     }
+                    if !self.assetWriterVideoInput.isReadyForMoreMediaData {
+                        print("WARNING: video input is not ready at time: \(time))")
+                        break
+                    }
+                    let bufferInput = self.assetWriterPixelBufferInput
+                    var appendResult = false
+                    try NSObject.catchException {
+                        appendResult = bufferInput.append(buffer, withPresentationTime: time)
+                    }
+                    if (!appendResult) {
+                        print("WARNING: Trouble appending pixel buffer at time: \(time) \(String(describing: self.assetWriter.error))")
+                        break
+                    }
+                    appendedBufferCount += 1
+                    self.totalFramesAppended += 1
                 }
-            }
-            catch {
+            } catch {
                 print("WARNING: Trouble appending video sample buffer at time: \(frameTime) \(error)")
             }
             self.videoSampleBufferCache.removeObjects(in: NSRange(0..<appendedBufferCount))
@@ -570,8 +580,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         
         if encodingLiveVideo {
             movieProcessingContext.runOperationSynchronously(state == .caching ? cache : work)
-        }
-        else {
+        } else {
             (state == .caching ? cache : work)()
         }
     }
@@ -648,17 +657,24 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             var appendedBufferCount = 0
             do {
-                try NSObject.catchException {
-                    for (_, audioBuffer) in self.audioSampleBufferCache.enumerated() {
-//                        debugPrint("[Caching] appending audio buffer \(i+1)/\(self.audioSampleBufferCache.count) at:\(CMSampleBufferGetOutputPresentationTimeStamp(audioBuffer).seconds)")
-                        if (!assetWriterAudioInput.append(audioBuffer)) {
-                            print("WARNING: Trouble appending audio sample buffer: \(String(describing: self.assetWriter.error))")
-                            break
-                        }
-                        appendedBufferCount += 1
-                        if shouldInvalidateSampleWhenDone {
-                            CMSampleBufferInvalidate(audioBuffer)
-                        }
+                for (_, audioBuffer) in self.audioSampleBufferCache.enumerated() {
+                    //                        debugPrint("[Caching] appending audio buffer \(i+1)/\(self.audioSampleBufferCache.count) at:\(CMSampleBufferGetOutputPresentationTimeStamp(audioBuffer).seconds)")
+                    if self.assetWriterAudioInput?.isReadyForMoreMediaData == false {
+                        print("WARNING: audio input is not ready at: \(CMSampleBufferGetPresentationTimeStamp(audioBuffer).seconds)")
+                        break
+                    }
+                    let audioInput = assetWriterAudioInput
+                    var appendResult = false
+                    try NSObject.catchException {
+                        appendResult = audioInput.append(audioBuffer)
+                    }
+                    if !appendResult {
+                        print("WARNING: Trouble appending audio sample buffer: \(String(describing: self.assetWriter.error))")
+                        break
+                    }
+                    appendedBufferCount += 1
+                    if shouldInvalidateSampleWhenDone {
+                        CMSampleBufferInvalidate(audioBuffer)
                     }
                 }
             }
@@ -668,10 +684,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             self.audioSampleBufferCache.removeFirst(appendedBufferCount)
         }
         
-        if(self.encodingLiveVideo) {
+        if encodingLiveVideo {
             movieProcessingContext.runOperationSynchronously(state == .caching ? cache : work)
-        }
-        else {
+        } else {
             (state == .caching ? cache : work)()
         }
     }
