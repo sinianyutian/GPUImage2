@@ -232,6 +232,7 @@ public class ImageRelay: ImageProcessingOperation {
     }
     
     public func transmitPreviousImage(to target:ImageConsumer, atIndex:UInt) {
+        guard sources.sources.count > 0 else { return }
         sources.sources[0]?.transmitPreviousImage(to:self, atIndex:0)
     }
 
