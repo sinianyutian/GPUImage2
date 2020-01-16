@@ -54,6 +54,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     public weak var delegate: MovieOutputDelegate?
     
+    public let url: URL
     private let assetWriter:AVAssetWriter
     let assetWriterVideoInput:AVAssetWriterInput
     var assetWriterAudioInput:AVAssetWriterInput?
@@ -104,6 +105,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil) throws {
 
         print("movie output init \(URL)")
+        self.url = URL
 
         imageProcessingShareGroup = sharedImageProcessingContext.context.sharegroup
         let movieProcessingContext = OpenGLContext()
