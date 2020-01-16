@@ -97,6 +97,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         return false
     }
     private var didTriggerEndTimeObserver = false
+    private var retryPlaying = false
     
     public override init() {
         print("movie player init")
@@ -527,6 +528,16 @@ private extension MoviePlayer {
     }
     
     @objc func displayLinkCallback(displayLink: CADisplayLink) {
+        if !retryPlaying && isPlaying && items().isEmpty {
+            print("Items is empty when playing. Retry playing")
+            retryPlaying = true
+            replayLastItem()
+        } else if !items().isEmpty {
+            if retryPlaying {
+                retryPlaying = false
+                print("Resume playing succeed")
+            }
+        }
         guard currentItem?.status == .readyToPlay else { return }
         let playTime = currentTime()
         guard playTime.seconds > 0 else { return }
