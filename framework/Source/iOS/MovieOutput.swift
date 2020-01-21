@@ -428,6 +428,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     
     private func _appendPixelBuffersFromCache() {
+        guard state == .writing, assetWriter.status == .writing else { return }
         var appendedBufferCount = 0
         do {
             // Drain all cached buffers at first
@@ -564,6 +565,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     
     private func _appendVideoSampleBuffersFromCache() {
+        guard state == .writing, assetWriter.status == .writing else { return }
         var appendedBufferCount = 0
         var time: CMTime = .zero
         do {
@@ -679,7 +681,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     
     private func _appendAudioBuffersFromCache() {
-        guard let audioInput = assetWriterAudioInput else { return }
+        guard let audioInput = assetWriterAudioInput, state == .writing, assetWriter.status == .writing else { return }
         var appendedBufferCount = 0
         do {
             for (_, audioBuffer) in audioSampleBufferCache.enumerated() {
