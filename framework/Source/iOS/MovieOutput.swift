@@ -283,12 +283,20 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             self.state = .canceled
             self.audioEncodingIsFinished = true
             self.videoEncodingIsFinished = true
+            print("MovieOutput cancel writing, state:\(self.assetWriter.status.rawValue)")
             if self.assetWriter.status == .writing {
                 self.assetWriter.cancelWriting()
             }
             completionCallback?()
-            print("MovieOutput cancel writing")
         }
+    }
+    
+    private func _shouldProcessVideoBuffer() -> Bool {
+        guard state == .caching || state == .writing, assetWriter.status == .writing, !videoEncodingIsFinished else {
+            print("Guard fell through, dropping video frame. state:\(self.state) writer.state:\(self.assetWriter.status.rawValue) videoEncodingIsFinished:\(self.videoEncodingIsFinished)")
+            return false
+        }
+        return true
     }
     
     private func _cleanBufferCaches(shouldAppend: Bool) {
@@ -337,13 +345,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         // Discard first n frames
         if dropFirstFrames > 0 {
             dropFirstFrames -= 1
-            synchronizedEncodingDebugPrint("Drop one frame. Left dropFirstFrames:\(dropFirstFrames)")
+            print("Drop one frame. Left dropFirstFrames:\(dropFirstFrames)")
             return
         }
-        guard state == .caching || state == .writing, assetWriter.status == .writing, !videoEncodingIsFinished else {
-            synchronizedEncodingDebugPrint("Guard fell through, dropping frame")
-            return
-        }
+        guard _shouldProcessVideoBuffer() else { return }
         guard let frameTime = framebuffer.timingStyle.timestamp?.asCMTime else { return }
         pixelBuffer = nil
         let pixelBufferStatus = CVPixelBufferPoolCreatePixelBuffer(nil, assetWriterPixelBufferInput.pixelBufferPool!, &pixelBuffer)
@@ -370,17 +375,17 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         // Discard first n frames
         if dropFirstFrames > 0 {
             dropFirstFrames -= 1
-            synchronizedEncodingDebugPrint("Drop one frame. Left dropFirstFrames:\(dropFirstFrames)")
+            print("Drop one frame. Left dropFirstFrames:\(dropFirstFrames)")
             return
         }
         
-        guard state == .caching || state == .writing, assetWriter.status == .writing, !videoEncodingIsFinished else {
-            synchronizedEncodingDebugPrint("Guard fell through, dropping frame")
-            return
-        }
+        guard _shouldProcessVideoBuffer() else { return }
         
         // Ignore still images and other non-video updates (do I still need this?)
-        guard let frameTime = framebuffer.timingStyle.timestamp?.asCMTime else { return }
+        guard let frameTime = framebuffer.timingStyle.timestamp?.asCMTime else {
+            print("Cannot get timestamp from framebuffer, dropping frame")
+            return
+        }
         
         // If two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case.
         guard (frameTime != previousFrameTime) else { return }
@@ -491,12 +496,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     public func processVideoBuffer(_ sampleBuffer: CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool) {
         let cache = { [weak self] in
             guard let self = self else { return }
-            guard self.state == .caching || self.state == .writing,
-                self.assetWriter.status == .writing,
-                !self.videoEncodingIsFinished else {
-                    self.synchronizedEncodingDebugPrint("Guard fell through, dropping frame")
-                    return
-            }
+            guard self._shouldProcessVideoBuffer() else { return }
             
             let frameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             
@@ -519,17 +519,15 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 }
             }
             guard let self = self else { return }
-            guard self.state == .caching || self.state == .writing,
-                self.assetWriter.status == .writing,
-                !self.videoEncodingIsFinished else {
-                    self.synchronizedEncodingDebugPrint("Guard fell through, dropping frame")
-                    return
-            }
+            guard self._shouldProcessVideoBuffer() else { return }
             
             let frameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             
             // If two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case.
-            guard (frameTime != self.previousFrameTime) else { return }
+            guard (frameTime != self.previousFrameTime) else {
+                print("Cannot get timestamp from framebuffer, dropping frame")
+                return
+            }
             
             self.videoSampleBufferCache.add(sampleBuffer)
             
@@ -613,18 +611,23 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         assetWriterAudioInput?.expectsMediaDataInRealTime = encodingLiveVideo
     }
     
+    private func _shouldProcessAudioBuffer() -> Bool {
+        guard state == .caching || state == .writing, assetWriter.status == .writing, !audioEncodingIsFinished else {
+            print("Guard fell through, dropping audio sample, state:\(self.state) writer.state:\(self.assetWriter.status.rawValue) audioEncodingIsFinished:\(self.audioEncodingIsFinished)")
+            return false
+        }
+        return true
+    }
+    
     public func processAudioBuffer(_ sampleBuffer:CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool) {
         shouldInvalidateAudioSampleWhenDone = shouldInvalidateSampleWhenDone
         let cache = { [weak self] in
             guard let self = self else { return }
-            guard self.state == .caching || self.state == .writing,
-                self.assetWriter.status == .writing,
-                !self.audioEncodingIsFinished else {
-                    self.synchronizedEncodingDebugPrint("Guard fell through, dropping audio sample")
-                    if shouldInvalidateSampleWhenDone {
-                        CMSampleBufferInvalidate(sampleBuffer)
-                    }
-                    return
+            guard self._shouldProcessAudioBuffer() else {
+                if shouldInvalidateSampleWhenDone {
+                    CMSampleBufferInvalidate(sampleBuffer)
+                }
+                return
             }
             let frameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             self.audioSampleBufferCache.append(sampleBuffer)
@@ -636,15 +639,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         
         let work = { [weak self] in
             guard let self = self else { return }
-            guard self.state == .caching || self.state == .writing,
-                self.assetWriter.status == .writing,
-                !self.audioEncodingIsFinished,
-                let assetWriterAudioInput = self.assetWriterAudioInput else {
-                    self.synchronizedEncodingDebugPrint("Guard fell through, dropping audio sample")
-                    if shouldInvalidateSampleWhenDone {
-                        CMSampleBufferInvalidate(sampleBuffer)
-                    }
-                    return
+            guard self._shouldProcessAudioBuffer(), let assetWriterAudioInput = self.assetWriterAudioInput else {
+                if shouldInvalidateSampleWhenDone {
+                    CMSampleBufferInvalidate(sampleBuffer)
+                }
+                return
             }
             
             let currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
@@ -656,7 +655,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             }
             
             while(!assetWriterAudioInput.isReadyForMoreMediaData && self.shouldWaitForEncoding && !self.audioEncodingIsFinished) {
-                self.synchronizedEncodingDebugPrint("Audio waiting...")
+                print("Audio waiting...")
                 usleep(100000)
                 if !assetWriterAudioInput.isReadyForMoreMediaData {
                     self.synchronizedEncodingDebugPrint("Audio still not ready, skip this runloop...")
@@ -665,7 +664,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             }
             
             guard self.previousFrameTime != nil else {
-                self.synchronizedEncodingDebugPrint("Add audio sample to pending queue but first video frame is not ready yet. Time:\(CMTimeGetSeconds(currentSampleTime))")
+                print("Add audio sample to pending queue but first video frame is not ready yet. Time:\(CMTimeGetSeconds(currentSampleTime))")
                 return
             }
             
