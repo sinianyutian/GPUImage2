@@ -316,6 +316,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     public func newFramebufferAvailable(_ framebuffer:Framebuffer, fromSourceIndex:UInt) {
         glFinish();
         
+        if previousFrameTime == nil {
+            debugPrint("starting process new framebuffer when previousFrameTime == nil")
+        }
+        
         let work = { [weak self] in
             if self?.state == .caching {
                 self?._renderAndCache(framebuffer: framebuffer)
@@ -349,7 +353,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             return
         }
         guard _shouldProcessVideoBuffer() else { return }
-        guard let frameTime = framebuffer.timingStyle.timestamp?.asCMTime else { return }
+        guard let frameTime = framebuffer.timingStyle.timestamp?.asCMTime else {
+            print("Cannot get timestamp from framebuffer, dropping frame")
+            return
+        }
         pixelBuffer = nil
         let pixelBufferStatus = CVPixelBufferPoolCreatePixelBuffer(nil, assetWriterPixelBufferInput.pixelBufferPool!, &pixelBuffer)
         guard pixelBuffer != nil && pixelBufferStatus == kCVReturnSuccess else {
@@ -372,6 +379,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     
     private func _processPixelBufferCache(framebuffer: Framebuffer) {
+        if previousFrameTime == nil {
+            debugPrint("Got a new framebuffer when previousFrameTime is nil")
+        }
         // Discard first n frames
         if dropFirstFrames > 0 {
             dropFirstFrames -= 1
@@ -388,13 +398,17 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
         
         // If two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case.
-        guard (frameTime != previousFrameTime) else { return }
+        guard (frameTime != previousFrameTime) else {
+            print("WARNING: frameTime is as same as previousFrameTIme")
+            return
+        }
         
         if (previousFrameTime == nil) {
             // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
             let startFrameTime = videoPixelBufferCache.first?.1 ?? frameTime
             assetWriter.startSession(atSourceTime: startFrameTime)
             self.startFrameTime = startFrameTime
+            print("did start writing at:\(startFrameTime.seconds)")
             delegate?.movieOutputDidStartWriting(self, at: startFrameTime)
         }
         
