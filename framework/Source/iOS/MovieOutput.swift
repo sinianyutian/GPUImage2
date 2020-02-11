@@ -316,7 +316,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     public func newFramebufferAvailable(_ framebuffer:Framebuffer, fromSourceIndex:UInt) {
         glFinish();
         
-        if previousFrameTime == nil {
+        if previousFrameTime == nil && videoSampleBufferCache.count <= 0 && videoPixelBufferCache.isEmpty && (state == .caching || state == .writing) {
             debugPrint("starting process new framebuffer when previousFrameTime == nil")
         }
         
