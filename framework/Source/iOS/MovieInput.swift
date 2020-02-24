@@ -373,11 +373,6 @@ public class MovieInput: ImageSource {
         var currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
         currentTime = currentSampleTime
         
-        if transcodingOnly, let movieOutput = synchronizedMovieOutput {
-            movieOutput.processVideoBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: false)
-            return
-        }
-        
         var duration = asset.duration // Only used for the progress block so its acuracy is not critical
         if let startTime = startTime {
             // Make sure our samples start at kCMTimeZero if the video was started midway.
@@ -389,12 +384,17 @@ public class MovieInput: ImageSource {
             }
         }
         
+        progress?(currentSampleTime.seconds/duration.seconds)
+        
+        if transcodingOnly, let movieOutput = synchronizedMovieOutput {
+            movieOutput.processVideoBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: false)
+            return
+        }
+        
         // NOTE: When calculating frame pre second, floating point maybe rounded, so we have to add tolerance manually
         if let fps = maxFPS, let currentTime = currentTime, (currentSampleTime.seconds - currentTime.seconds) < 1 / Double(fps) - 0.0000001 {
             return
         }
-        
-        progress?(currentSampleTime.seconds/duration.seconds)
         
         if synchronizedMovieOutput != nil {
             // For synchrozied transcoding, separate AVAssetReader thread and OpenGL thread to improve performance
