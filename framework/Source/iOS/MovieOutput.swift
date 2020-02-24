@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 
 public protocol AudioEncodingTarget {
     func activateAudioTrack() throws
@@ -73,6 +74,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             assetWriterAudioInput?.expectsMediaDataInRealTime = encodingLiveVideo
         }
     }
+    private var ciFilter: CILookupFilter?
+    private var cpuCIContext: CIContext?
     public private(set) var pixelBuffer:CVPixelBuffer? = nil
     public var dropFirstFrames: Int = 0
     public var waitUtilDataIsReadyForLiveVideo = false
@@ -163,6 +166,37 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         self.movieProcessingContext = movieProcessingContext
     }
     
+    public func setupSoftwareLUTFilter(lutImage: UIImage, intensity: Double? = nil, brightnessFactor: Double? = nil, sync: Bool = true) {
+        let block: () -> () = { [weak self] in
+            if self?.cpuCIContext == nil {
+                let colorSpace = CGColorSpaceCreateDeviceRGB()
+                let options: [CIContextOption: AnyObject] = [
+                    .workingColorSpace: colorSpace,
+                    .outputColorSpace : colorSpace,
+                    .useSoftwareRenderer : NSNumber(value: true)
+                ]
+                self?.cpuCIContext = CIContext(options: options)
+            }
+            self?.ciFilter = CILookupFilter(lutImage: lutImage, intensity: intensity, brightnessFactor: brightnessFactor)
+        }
+        if sync {
+            sharedImageProcessingContext.runOperationSynchronously(block)
+        } else {
+            sharedImageProcessingContext.runOperationAsynchronously(block)
+        }
+    }
+    
+    public func cleanSoftwareFilter(sync: Bool = true) {
+        let block: () -> () = { [weak self] in
+            self?.ciFilter = nil
+        }
+        if sync {
+            sharedImageProcessingContext.runOperationSynchronously(block)
+        } else {
+            sharedImageProcessingContext.runOperationAsynchronously(block)
+        }
+    }
+    
     public func startRecording(sync: Bool = false, manualControlState: Bool = false, _ completionCallback:((_ started: Bool, _ error: Error?) -> Void)? = nil) {
         // Don't do this work on the movieProcessingContext queue so we don't block it.
         // If it does get blocked framebuffers will pile up from live video and after it is no longer blocked (this work has finished)
@@ -185,8 +219,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 }
                 print("MovieOutput starting writing...")
                 var success = false
+                let assetWriter = self.assetWriter
                 try NSObject.catchException {
-                    success = self.assetWriter.startWriting()
+                    success = assetWriter.startWriting()
                 }
                 
                 if(!success) {
@@ -593,6 +628,12 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 if !self.assetWriterVideoInput.isReadyForMoreMediaData {
                     print("WARNING: video input is not ready at time: \(time))")
                     break
+                }
+                if let ciFilter = ciFilter {
+                    let originalImage = CIImage(cvPixelBuffer: buffer)
+                    if let outputImage = ciFilter.applyFilter(on: originalImage), let ciContext = cpuCIContext {
+                        ciContext.render(outputImage, to: buffer)
+                    }
                 }
                 let bufferInput = self.assetWriterPixelBufferInput
                 var appendResult = false
