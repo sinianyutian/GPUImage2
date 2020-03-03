@@ -65,7 +65,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         return asset.imageOrientation ?? .portrait
     }
     public var didPlayToEnd: Bool {
-        return currentTime() >= assetDuration
+        return currentItem?.currentTime() ?? .zero >= assetDuration
     }
     public var hasTarget: Bool { targets.count > 0 }
     
@@ -98,16 +98,30 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     }
     private var didTriggerEndTimeObserver = false
     private var retryPlaying = false
+    /// Return the current item. If currentItem was played to end, will return next one
+    public var actualCurrentItem: AVPlayerItem? {
+        let playerItems = items()
+        guard playerItems.count > 0 else { return nil }
+        if didPlayToEnd {
+            if playerItems.count == 1 {
+                return nil
+            } else {
+                return playerItems[1]
+            }
+        } else {
+            return playerItems[0]
+        }
+    }
     
     public override init() {
-        print("movie player init")
+        print("[MoviePlayer] init")
         // Make sure player it intialized on the main thread, or it might cause KVO crash
         assert(Thread.isMainThread)
         super.init()
     }
     
     deinit {
-        print("movie player deinit \(String(describing: asset))")
+        print("[MoviePlayer] deinit \(String(describing: asset))")
         assert(observations.isEmpty, "observers must be removed before deinit")
         pause()
         displayLink?.invalidate()
@@ -139,11 +153,18 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         if shouldDelayAddPlayerItem {
             needAddItemAfterDidEndNotify = true
             pendingNewItems.append(item)
+            print("[MoviePlayer] pending insert. pendingNewItems:\(pendingNewItems)")
         } else {
+            // Append previous pending items at first
+            if needAddItemAfterDidEndNotify {
+                needAddItemAfterDidEndNotify = false
+                pendingNewItems.forEach { insert($0, after: nil) }
+                pendingNewItems.removeAll()
+            }
             remove(item)
             super.insert(item, after: afterItem)
         }
-        print("insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) enableVideoOutput:\(enableVideoOutput) currentTime:\(currentTime().seconds) itemsAfter:\(items().count)")
+        print("[MoviePlayer] insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) enableVideoOutput:\(enableVideoOutput) currentTime:\(currentTime().seconds) itemsAfter:\(items().count)")
     }
     
     override public func replaceCurrentItem(with item: AVPlayerItem?) {
@@ -169,10 +190,11 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         if shouldDelayAddPlayerItem && item != nil {
             needAddItemAfterDidEndNotify = true
             pendingNewItems.append(item!)
+            print("[MoviePlayer] pending replace. pendingNewItems:\(pendingNewItems)")
         } else {
             super.replaceCurrentItem(with: item)
         }
-        print("replace current item with newItem(\(item?.duration.seconds ?? 0)s)):\(String(describing: item)) enableVideoOutput:\(enableVideoOutput) currentTime:\(currentTime().seconds) itemsAfter:\(items().count) ")
+        print("[MoviePlayer] replace current item with newItem(\(item?.duration.seconds ?? 0)s)):\(String(describing: item)) enableVideoOutput:\(enableVideoOutput) currentTime:\(currentTime().seconds) itemsAfter:\(items().count) ")
     }
     
     public func replayLastItem() {
@@ -183,23 +205,25 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         } else {
             play()
         }
-        print("replay last item:\(playerItem) currentTime:\(currentTime().seconds)")
+        print("[MoviePlayer] replay last item:\(playerItem) currentTime:\(currentTime().seconds)")
     }
     
     override public func remove(_ item: AVPlayerItem) {
         super.remove(item)
-        print("remove item:\(item) currentTime:\(currentTime().seconds)")
+        pendingNewItems.removeAll { $0 == item }
+        print("[MoviePlayer] remove item:\(item) currentTime:\(currentTime().seconds)")
     }
     
     override public func removeAllItems() {
         _stopLoopingIfNeeded()
         super.removeAllItems()
-        print("remove all items currentTime:\(currentTime().seconds)")
+        pendingNewItems.removeAll()
+        print("[MoviePlayer] remove all items currentTime:\(currentTime().seconds)")
     }
     
     override public func advanceToNextItem() {
         super.advanceToNextItem()
-        print("advance to next item currentTime:\(currentTime().seconds)")
+        print("[MoviePlayer] advance to next item currentTime:\(currentTime().seconds)")
     }
     
     // MARK: -
@@ -225,12 +249,12 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         
         guard currentItem != nil else {
             // Sometime the player.items() seems still 0 even if insert was called, but it won't result in crash, just print a error log for information.
-            print("ERROR! player currentItem is nil")
+            print("[MoviePlayer] ERROR! player currentItem is nil")
             return
         }
         isPlaying = true
         isProcessing = false
-        print("movie player start currentTime:\(currentTime().seconds) duration:\(String(describing: asset?.duration.seconds)) items:\(items())")
+        print("[MoviePlayer] start currentTime:\(currentTime().seconds) duration:\(String(describing: asset?.duration.seconds)) items:\(items())")
         _setupDisplayLinkIfNeeded()
         _resetTimeObservers()
         if shouldUseLooper {
@@ -293,7 +317,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             nextSeeking = SeekingInfo(time: targetTime, toleranceBefore: .zero, toleranceAfter: .zero, shouldPlayAfterSeeking: shouldPlayAfterSeeking)
         }
         if assetDuration <= .zero {
-            print("cannot seek since assetDuration is 0. currentItem:\(String(describing: currentItem))")
+            print("[MoviePlayer] cannot seek since assetDuration is 0. currentItem:\(String(describing: currentItem))")
         } else {
             actuallySeekToTime()
         }
@@ -397,7 +421,7 @@ private extension MoviePlayer {
         if loop, let looper = MoviePlayer.looperDict[self] {
             looper.disableLooping()
             MoviePlayer.looperDict[self] = nil
-            print("stop looping item)")
+            print("[MoviePlayer] stop looping item)")
         }
     }
     
@@ -470,12 +494,12 @@ private extension MoviePlayer {
     }
     
     func playerStatusDidChange() {
-        debugPrint("Player status change to:\(status.rawValue) asset:\(String(describing: asset)) currentTime:\(currentTime().seconds)")
+        debugPrint("[MoviePlayer] Player status change to:\(status.rawValue) asset:\(String(describing: asset)) currentTime:\(currentTime().seconds)")
         resumeIfNeeded()
     }
     
     func playerItemStatusDidChange(_ playerItem: AVPlayerItem) {
-        debugPrint("PlayerItem status change to:\(playerItem.status.rawValue) asset:\(playerItem.asset) currentTime:\(currentTime().seconds)")
+        debugPrint("[MoviePlayer] PlayerItem status change to:\(playerItem.status.rawValue) asset:\(playerItem.asset) currentTime:\(currentTime().seconds)")
         if playerItem == currentItem {
             resumeIfNeeded()
         }
@@ -496,13 +520,13 @@ private extension MoviePlayer {
     func _process(videoOutput: AVPlayerItemVideoOutput, at playTime: CMTime) {
         var timeForDisplay: CMTime = .zero
         guard let pixelBuffer = videoOutput.copyPixelBuffer(forItemTime: playTime, itemTimeForDisplay: &timeForDisplay) else {
-            print("Failed to copy pixel buffer at time:\(playTime)")
+            print("[MoviePlayer] Failed to copy pixel buffer at time:\(playTime)")
             return
         }
         
         // Out of range when looping, skip process. So that it won't show unexpected frames.
         if loop && isPlaying && (timeForDisplay < actualStartTime || timeForDisplay >= actualEndTime) {
-            print("Skipped frame at time:\(timeForDisplay.seconds) is larger than range: [\(actualStartTime.seconds), \(actualEndTime.seconds)]")
+            print("[MoviePlayer] Skipped frame at time:\(timeForDisplay.seconds) is larger than range: [\(actualStartTime.seconds), \(actualEndTime.seconds)]")
             return
         }
         
@@ -516,8 +540,8 @@ private extension MoviePlayer {
             if runBenchmark {
                 let currentFrameTime = (CFAbsoluteTimeGetCurrent() - startTime)
                 totalFrameTime += currentFrameTime
-                print("Average frame time :\(1000.0 * totalFrameTime / Double(totalFramesSent)) ms")
-                print("Current frame time :\(1000.0 * currentFrameTime) ms")
+                print("[MoviePlayer] Average frame time :\(1000.0 * totalFrameTime / Double(totalFramesSent)) ms")
+                print("[MoviePlayer] Current frame time :\(1000.0 * currentFrameTime) ms")
             }
         }
         
@@ -529,13 +553,13 @@ private extension MoviePlayer {
     
     @objc func displayLinkCallback(displayLink: CADisplayLink) {
         if !retryPlaying && isPlaying && items().isEmpty {
-            print("Items is empty when playing. Retry playing")
+            print("[MoviePlayer] Items is empty when playing. Retry playing")
             retryPlaying = true
             replayLastItem()
         } else if !items().isEmpty {
             if retryPlaying {
                 retryPlaying = false
-                print("Resume playing succeed")
+                print("[MoviePlayer] Resume playing succeed")
             }
         }
         guard currentItem?.status == .readyToPlay else { return }
@@ -569,7 +593,7 @@ private extension MoviePlayer {
     }
     
     @objc func playerDidPlayToEnd(notification: Notification) {
-        print("player did play to end. currentTime:\(currentTime().seconds) notification:\(notification) items:\(items())")
+        print("[MoviePlayer] did play to end. currentTime:\(currentTime().seconds) notification:\(notification) items:\(items())")
         guard (notification.object as? AVPlayerItem) == currentItem else { return }
         if needAddItemAfterDidEndNotify {
             DispatchQueue.main.async() { [weak self] in
@@ -589,7 +613,7 @@ private extension MoviePlayer {
     }
     
     @objc func playerStalled(notification: Notification) {
-        print("player was stalled. currentTime:\(currentTime().seconds) notification:\(notification)")
+        print("[MoviePlayer] player was stalled. currentTime:\(currentTime().seconds) notification:\(notification)")
         guard (notification.object as? AVPlayerItem) == currentItem else { return }
     }
     
