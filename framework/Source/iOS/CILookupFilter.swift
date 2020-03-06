@@ -7,6 +7,8 @@
 //
 
 import Foundation
+import UIKit
+import CoreImage
 
 public class CILookupFilter {
     private var lutFilter: CIFilter?

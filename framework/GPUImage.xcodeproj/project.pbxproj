@@ -18,6 +18,7 @@
 		1F6D1CBA2048FB0300317B5F /* TPCircularBuffer.m in Sources */ = {isa = PBXBuildFile; fileRef = 1F6D1CB72048FB0300317B5F /* TPCircularBuffer.m */; };
 		1F6D1CBB2048FB0300317B5F /* TPCircularBuffer.m in Sources */ = {isa = PBXBuildFile; fileRef = 1F6D1CB72048FB0300317B5F /* TPCircularBuffer.m */; };
 		1F6D1CC02048FFD900317B5F /* SpeakerOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F6D1CBF2048FFD900317B5F /* SpeakerOutput.swift */; };
+		262E656D240F5F27002C27AB /* CILookupFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262E656B240F5EE0002C27AB /* CILookupFilter.swift */; };
 		264B6AD9237303370090979C /* MoviePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264B6AD6237303040090979C /* MoviePlayer.swift */; };
 		264B6ADA2373033B0090979C /* FramebufferGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264B6AD5237303040090979C /* FramebufferGenerator.swift */; };
 		BC09239E1C92658200A2ADFA /* ShaderProgram_Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC09239D1C92658200A2ADFA /* ShaderProgram_Tests.swift */; };
@@ -393,6 +394,7 @@
 		1F6D1CB62048FB0300317B5F /* TPCircularBuffer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TPCircularBuffer.h; path = Source/TPCircularBuffer.h; sourceTree = "<group>"; };
 		1F6D1CB72048FB0300317B5F /* TPCircularBuffer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TPCircularBuffer.m; path = Source/TPCircularBuffer.m; sourceTree = "<group>"; };
 		1F6D1CBF2048FFD900317B5F /* SpeakerOutput.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = SpeakerOutput.swift; path = Source/iOS/SpeakerOutput.swift; sourceTree = "<group>"; };
+		262E656B240F5EE0002C27AB /* CILookupFilter.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = CILookupFilter.swift; path = Source/iOS/CILookupFilter.swift; sourceTree = "<group>"; };
 		264B6AD5237303040090979C /* FramebufferGenerator.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = FramebufferGenerator.swift; path = Source/iOS/FramebufferGenerator.swift; sourceTree = "<group>"; };
 		264B6AD6237303040090979C /* MoviePlayer.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = MoviePlayer.swift; path = Source/iOS/MoviePlayer.swift; sourceTree = "<group>"; };
 		BC09239D1C92658200A2ADFA /* ShaderProgram_Tests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = ShaderProgram_Tests.swift; path = Tests/ShaderProgram_Tests.swift; sourceTree = SOURCE_ROOT; };
@@ -1161,6 +1163,7 @@
 		BC9E35201E524D2A00B8604F /* iOS */ = {
 			isa = PBXGroup;
 			children = (
+				262E656B240F5EE0002C27AB /* CILookupFilter.swift */,
 				1F6D1CBF2048FFD900317B5F /* SpeakerOutput.swift */,
 				BC9E35231E524D4D00B8604F /* RenderView.swift */,
 				BC9E35221E524D4D00B8604F /* PictureOutput.swift */,
@@ -1693,6 +1696,7 @@
 				BC9E35961E52574A00B8604F /* ImageBuffer.swift in Sources */,
 				BC9E35831E52571100B8604F /* LocalBinaryPattern.swift in Sources */,
 				BC9E35C71E5257E700B8604F /* ExclusionBlend.swift in Sources */,
+				262E656D240F5F27002C27AB /* CILookupFilter.swift in Sources */,
 				BC9E35A31E52577300B8604F /* KuwaharaFilter.swift in Sources */,
 				BC9E35481E524DA700B8604F /* CrosshairGenerator.swift in Sources */,
 				BC9E35B81E5257B500B8604F /* SmoothToonFilter.swift in Sources */,
