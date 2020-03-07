@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreImage
+import UIKit
 
 public protocol AudioEncodingTarget {
     func activateAudioTrack() throws
@@ -105,7 +106,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     var preferredTransform: CGAffineTransform?
     
-    public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil) throws {
+    public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, optimizeForNetworkUse: Bool = false, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil) throws {
 
         print("movie output init \(URL)")
         self.url = URL
@@ -122,7 +123,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         self.size = size
         
         assetWriter = try AVAssetWriter(url:URL, fileType:fileType)
-        assetWriter.shouldOptimizeForNetworkUse = true
+        if optimizeForNetworkUse {
+            // NOTE: this is neccessary for streaming play support, but it will slow down finish writing speed
+            assetWriter.shouldOptimizeForNetworkUse = true
+        }
         
         var localSettings:[String:Any]
         if let videoSettings = videoSettings {
@@ -277,6 +281,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     
     public func finishRecording(_ completionCallback:(() -> Void)? = nil) {
+        print("MovieOutput start finishing writing, optimizeForNetworkUse:\(assetWriter.shouldOptimizeForNetworkUse)")
         _writerAsync { [weak self] in
             self?._cleanBufferCaches(shouldAppend: true)
             guard let self = self, self.state == .writing,
@@ -301,10 +306,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             if let lastFrame = self.previousFrameTime, let startFrame = self.startFrameTime {
                 self.recordedDuration = lastFrame - startFrame
             }
+            print("MovieOutput did start finishing writing. Total frames appended:\(self.totalFramesAppended)")
             self.assetWriter.finishWriting {
+                print("MovieOutput did finish writing")
                 completionCallback?()
             }
-            print("MovieOutput finished writing. Total frames appended:\(self.totalFramesAppended)")
         }
     }
     

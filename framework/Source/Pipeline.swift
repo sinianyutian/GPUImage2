@@ -111,7 +111,7 @@ class WeakImageConsumer {
 public class TargetContainer:Sequence {
     private var targets = [WeakImageConsumer]()
     
-    var count:Int { get { return targets.count } }
+    public var count:Int { get { return targets.count } }
 
 #if !os(Linux)
     let dispatchQueue = DispatchQueue(label:"com.sunsetlakesoftware.GPUImage.targetContainerQueue", attributes: [])
