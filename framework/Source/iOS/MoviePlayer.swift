@@ -552,11 +552,7 @@ private extension MoviePlayer {
     }
     
     @objc func displayLinkCallback(displayLink: CADisplayLink) {
-        if !retryPlaying && isPlaying && items().isEmpty {
-            print("[MoviePlayer] Items is empty when playing. Retry playing")
-            retryPlaying = true
-            replayLastItem()
-        } else if !items().isEmpty {
+        if !items().isEmpty {
             if retryPlaying {
                 retryPlaying = false
                 print("[MoviePlayer] Resume playing succeed")
