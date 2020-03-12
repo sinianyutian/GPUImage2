@@ -97,6 +97,8 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         return false
     }
     private var didTriggerEndTimeObserver = false
+    private var didRegisterPlayerNotification = false
+    private var didNotifyEndedItem: AVPlayerItem? = nil
     private var retryPlaying = false
     /// Return the current item. If currentItem was played to end, will return next one
     public var actualCurrentItem: AVPlayerItem? {
@@ -150,7 +152,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         lastPlayerItem = item
         self.enableVideoOutput = enableVideoOutput
         _setupPlayerObservers(playerItem: item)
-        if shouldDelayAddPlayerItem {
+        if shouldDelayAddPlayerItem && didNotifyEndedItem != item {
             needAddItemAfterDidEndNotify = true
             pendingNewItems.append(item)
             print("[MoviePlayer] pending insert. pendingNewItems:\(pendingNewItems)")
@@ -164,7 +166,13 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             remove(item)
             super.insert(item, after: afterItem)
         }
+        didNotifyEndedItem = nil
         print("[MoviePlayer] insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) enableVideoOutput:\(enableVideoOutput) currentTime:\(currentTime().seconds) itemsAfter:\(items().count)")
+    }
+    
+    public func seekItem(_ item: AVPlayerItem, to time: CMTime, toleranceBefore: CMTime = .zero, toleranceAfter: CMTime = .zero, completionHandler: ((Bool) -> Void)? = nil) {
+        item.seek(to: time, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter, completionHandler: completionHandler)
+        didNotifyEndedItem = nil
     }
     
     override public func replaceCurrentItem(with item: AVPlayerItem?) {
@@ -172,6 +180,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     }
     
     public func replaceCurrentItem(with item: AVPlayerItem?, enableVideoOutput: Bool) {
+        didNotifyEndedItem = nil
         lastPlayerItem = item
         // Stop looping before replacing
         if shouldUseLooper && MoviePlayer.looperDict[self] != nil {
@@ -257,6 +266,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         print("[MoviePlayer] start currentTime:\(currentTime().seconds) duration:\(String(describing: asset?.duration.seconds)) items:\(items())")
         _setupDisplayLinkIfNeeded()
         _resetTimeObservers()
+        didNotifyEndedItem = nil
         if shouldUseLooper {
             if let playerItem = lastPlayerItem {
                 MoviePlayer.looperDict[self]?.disableLooping()
@@ -434,9 +444,12 @@ private extension MoviePlayer {
     }
     
     func _setupPlayerObservers(playerItem: AVPlayerItem?) {
-        _removePlayerObservers()
-        NotificationCenter.default.addObserver(self, selector: #selector(playerDidPlayToEnd), name: .AVPlayerItemDidPlayToEndTime, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(playerStalled), name: .AVPlayerItemPlaybackStalled, object: nil)
+        _removePlayerObservers(removeNotificationCenter: !didRegisterPlayerNotification)
+        if !didRegisterPlayerNotification {
+            NotificationCenter.default.addObserver(self, selector: #selector(playerDidPlayToEnd), name: .AVPlayerItemDidPlayToEndTime, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(playerStalled), name: .AVPlayerItemPlaybackStalled, object: nil)
+            didRegisterPlayerNotification = true
+        }
         observations.append(observe(\.status) { [weak self] _, _ in
             self?.playerStatusDidChange()
         })
@@ -450,9 +463,12 @@ private extension MoviePlayer {
         }
     }
     
-    func _removePlayerObservers() {
-        NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: nil)
-        NotificationCenter.default.removeObserver(self, name: .AVPlayerItemPlaybackStalled, object: nil)
+    func _removePlayerObservers(removeNotificationCenter: Bool = true) {
+        if removeNotificationCenter {
+            NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: nil)
+            NotificationCenter.default.removeObserver(self, name: .AVPlayerItemPlaybackStalled, object: nil)
+            didRegisterPlayerNotification = false
+        }
         observations.forEach { $0.invalidate() }
         observations.removeAll()
     }
@@ -591,6 +607,7 @@ private extension MoviePlayer {
     @objc func playerDidPlayToEnd(notification: Notification) {
         print("[MoviePlayer] did play to end. currentTime:\(currentTime().seconds) notification:\(notification) items:\(items())")
         guard (notification.object as? AVPlayerItem) == currentItem else { return }
+        didNotifyEndedItem = currentItem
         if needAddItemAfterDidEndNotify {
             DispatchQueue.main.async() { [weak self] in
                 guard let self = self else { return }
