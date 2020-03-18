@@ -354,7 +354,7 @@ public class MovieInput: ImageSource {
     func readNextVideoFrame(with assetReader: AVAssetReader, from videoTrackOutput:AVAssetReaderOutput) {
         guard let sampleBuffer = videoTrackOutput.copyNextSampleBuffer() else {
             if let movieOutput = self.synchronizedMovieOutput {
-                movieOutput.movieProcessingContext.runOperationAsynchronously {
+                MovieOutput.movieProcessingContext.runOperationAsynchronously {
                     // Documentation: "Clients that are monitoring each input's readyForMoreMediaData value must call markAsFinished on an input when they are done
                     // appending buffers to it. This is necessary to prevent other inputs from stalling, as they may otherwise wait forever
                     // for that input's media data, attempting to complete the ideal interleaving pattern."
@@ -448,7 +448,7 @@ public class MovieInput: ImageSource {
         let shouldInvalidate = !transcodingOnly
         guard let sampleBuffer = audioTrackOutput.copyNextSampleBuffer() else {
             if let movieOutput = self.synchronizedMovieOutput {
-                movieOutput.movieProcessingContext.runOperationAsynchronously {
+                MovieOutput.movieProcessingContext.runOperationAsynchronously {
                     movieOutput.flushPendingAudioBuffers(shouldInvalidateSampleWhenDone: shouldInvalidate)
                     movieOutput.audioEncodingIsFinished = true
                     movieOutput.assetWriterAudioInput?.markAsFinished()
@@ -460,7 +460,7 @@ public class MovieInput: ImageSource {
         self.synchronizedEncodingDebugPrint("Process audio sample input. Time:\(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)))")
         
         if let movieOutput = self.synchronizedMovieOutput {
-            movieOutput.movieProcessingContext.runOperationAsynchronously { [weak self] in
+            MovieOutput.movieProcessingContext.runOperationAsynchronously { [weak self] in
                 guard let self = self else { return }
                 self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: shouldInvalidate)
             }
@@ -479,7 +479,10 @@ public class MovieInput: ImageSource {
     func process(movieFrame:CVPixelBuffer, withSampleTime:CMTime) {
         let startTime = CACurrentMediaTime()
         
-        guard let framebuffer = framebufferGenerator.generateFromYUVBuffer(movieFrame, frameTime: withSampleTime, videoOrientation: videoOrientation) else { return }
+        guard let framebuffer = framebufferGenerator.generateFromYUVBuffer(movieFrame, frameTime: withSampleTime, videoOrientation: videoOrientation) else {
+            print("Cannot generate framebuffer from YUVBuffer")
+            return
+        }
         framebuffer.userInfo = framebufferUserInfo
         self.movieFramebuffer = framebuffer
         self.updateTargetsWithFramebuffer(framebuffer)

@@ -86,7 +86,13 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     public private(set) var audioSettings:[String:Any]? = nil
     public private(set) var audioSourceFormatHint:CMFormatDescription?
     
-    public let movieProcessingContext:OpenGLContext
+    public static let movieProcessingContext: OpenGLContext = {
+        var context: OpenGLContext?
+        sharedImageProcessingContext.runOperationSynchronously {
+             context = OpenGLContext()
+        }
+        return context!
+    }()
     public private(set) var videoPixelBufferCache = [(CVPixelBuffer, CMTime)]()
     public private(set) var videoSampleBufferCache = NSMutableArray()
     public private(set) var audioSampleBufferCache = [CMSampleBuffer]()
@@ -112,12 +118,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         self.url = URL
 
         imageProcessingShareGroup = sharedImageProcessingContext.context.sharegroup
-        let movieProcessingContext = OpenGLContext()
         
-        if movieProcessingContext.supportsTextureCaches() {
-            self.colorSwizzlingShader = movieProcessingContext.passthroughShader
+        if Self.movieProcessingContext.supportsTextureCaches() {
+            self.colorSwizzlingShader = Self.movieProcessingContext.passthroughShader
         } else {
-            self.colorSwizzlingShader = crashOnShaderCompileFailure("MovieOutput"){try movieProcessingContext.programForVertexShader(defaultVertexShaderForInputs(1), fragmentShader:ColorSwizzlingFragmentShader)}
+            self.colorSwizzlingShader = crashOnShaderCompileFailure("MovieOutput"){try Self.movieProcessingContext.programForVertexShader(defaultVertexShaderForInputs(1), fragmentShader:ColorSwizzlingFragmentShader)}
         }
         
         self.size = size
@@ -166,8 +171,6 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         
         self.audioSettings = audioSettings
         self.audioSourceFormatHint = audioSourceFormatHint
-        
-        self.movieProcessingContext = movieProcessingContext
     }
     
     public func setupSoftwareLUTFilter(lutImage: UIImage, intensity: Double? = nil, brightnessFactor: Double? = nil, sync: Bool = true) {
@@ -342,7 +345,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     private func _cleanBufferCaches(shouldAppend: Bool) {
         print("[Caching] Drain all buffers videoPixelBuffers:\(videoPixelBufferCache.count) audioSampleBuffer:\(audioSampleBufferCache.count) videoSampleBuffers:\(videoSampleBufferCache.count)")
-        movieProcessingContext.runOperationSynchronously {
+        Self.movieProcessingContext.runOperationSynchronously {
             if shouldAppend {
                 self._appendPixelBuffersFromCache()
                 self._appendAudioBuffersFromCache()
@@ -376,13 +379,13 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             // This is done asynchronously to reduce the amount of work done on the sharedImageProcessingContext que
             // so we can decrease the risk of frames being dropped by the camera. I believe it is unlikely a backlog of framebuffers will occur
             // since the framebuffers come in much slower than during synchronized encoding.
-            movieProcessingContext.runOperationAsynchronously(work)
+            Self.movieProcessingContext.runOperationAsynchronously(work)
         }
         else {
             // This is done synchronously to prevent framebuffers from piling up during synchronized encoding.
             // If we don't force the sharedImageProcessingContext queue to wait for this frame to finish processing it will
             // keep sending frames whenever isReadyForMoreMediaData = true but the movieProcessingContext queue would run when the system wants it to.
-            movieProcessingContext.runOperationSynchronously(work)
+            Self.movieProcessingContext.runOperationSynchronously(work)
         }
     }
     
@@ -530,17 +533,17 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         
         let bufferSize = GLSize(self.size)
         var cachedTextureRef:CVOpenGLESTexture? = nil
-        let _ = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, self.movieProcessingContext.coreVideoTextureCache, pixelBuffer, nil, GLenum(GL_TEXTURE_2D), GL_RGBA, bufferSize.width, bufferSize.height, GLenum(GL_BGRA), GLenum(GL_UNSIGNED_BYTE), 0, &cachedTextureRef)
+        let _ = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, Self.movieProcessingContext.coreVideoTextureCache, pixelBuffer, nil, GLenum(GL_TEXTURE_2D), GL_RGBA, bufferSize.width, bufferSize.height, GLenum(GL_BGRA), GLenum(GL_UNSIGNED_BYTE), 0, &cachedTextureRef)
         let cachedTexture = CVOpenGLESTextureGetName(cachedTextureRef!)
         
-        renderFramebuffer = try Framebuffer(context:self.movieProcessingContext, orientation:.portrait, size:bufferSize, textureOnly:false, overriddenTexture:cachedTexture)
+        renderFramebuffer = try Framebuffer(context:Self.movieProcessingContext, orientation:.portrait, size:bufferSize, textureOnly:false, overriddenTexture:cachedTexture)
         
         renderFramebuffer.activateFramebufferForRendering()
         clearFramebufferWithColor(Color.black)
         CVPixelBufferLockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
-        renderQuadWithShader(colorSwizzlingShader, uniformSettings:ShaderUniformSettings(), vertexBufferObject:movieProcessingContext.standardImageVBO, inputTextures:[framebuffer.texturePropertiesForOutputRotation(.noRotation)], context: movieProcessingContext)
+        renderQuadWithShader(colorSwizzlingShader, uniformSettings:ShaderUniformSettings(), vertexBufferObject:Self.movieProcessingContext.standardImageVBO, inputTextures:[framebuffer.texturePropertiesForOutputRotation(.noRotation)], context: Self.movieProcessingContext)
         
-        if movieProcessingContext.supportsTextureCaches() {
+        if Self.movieProcessingContext.supportsTextureCaches() {
             glFinish()
         } else {
             glReadPixels(0, 0, renderFramebuffer.size.width, renderFramebuffer.size.height, GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), CVPixelBufferGetBaseAddress(pixelBuffer))
@@ -611,7 +614,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
         
         if encodingLiveVideo {
-            movieProcessingContext.runOperationSynchronously(state == .caching ? cache : work)
+            Self.movieProcessingContext.runOperationSynchronously(state == .caching ? cache : work)
         } else {
             (state == .caching ? cache : work)()
         }
@@ -734,7 +737,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
         
         if encodingLiveVideo {
-            movieProcessingContext.runOperationSynchronously(state == .caching ? cache : work)
+            Self.movieProcessingContext.runOperationSynchronously(state == .caching ? cache : work)
         } else {
             (state == .caching ? cache : work)()
         }
@@ -785,14 +788,14 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     
     private func _writerAsync(operation: @escaping () -> Void) {
-        MovieOutput.assetWriterQueue.async { [weak self] in
-            self?.movieProcessingContext.runOperationSynchronously(operation)
+        MovieOutput.assetWriterQueue.async {
+            Self.movieProcessingContext.runOperationSynchronously(operation)
         }
     }
     
     private func _writerSync(operation: @escaping () -> Void) {
-        MovieOutput.assetWriterQueue.sync { [weak self] in
-            self?.movieProcessingContext.runOperationSynchronously(operation)
+        MovieOutput.assetWriterQueue.sync {
+            Self.movieProcessingContext.runOperationSynchronously(operation)
         }
     }
 }
