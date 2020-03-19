@@ -152,7 +152,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         lastPlayerItem = item
         self.enableVideoOutput = enableVideoOutput
         _setupPlayerObservers(playerItem: item)
-        if shouldDelayAddPlayerItem && didNotifyEndedItem != item {
+        if shouldDelayAddPlayerItem && didNotifyEndedItem != nil && didNotifyEndedItem != item {
             needAddItemAfterDidEndNotify = true
             pendingNewItems.append(item)
             print("[MoviePlayer] pending insert. pendingNewItems:\(pendingNewItems)")
@@ -165,9 +165,9 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
             }
             remove(item)
             super.insert(item, after: afterItem)
+            print("[MoviePlayer] insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) enableVideoOutput:\(enableVideoOutput) currentTime:\(currentTime().seconds) itemsAfter:\(items().count)")
         }
         didNotifyEndedItem = nil
-        print("[MoviePlayer] insert new item(\(item.duration.seconds)s):\(item) afterItem:\(String(describing: afterItem)) enableVideoOutput:\(enableVideoOutput) currentTime:\(currentTime().seconds) itemsAfter:\(items().count)")
     }
     
     public func seekItem(_ item: AVPlayerItem, to time: CMTime, toleranceBefore: CMTime = .zero, toleranceAfter: CMTime = .zero, completionHandler: ((Bool) -> Void)? = nil) {
