@@ -127,6 +127,9 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         assert(observations.isEmpty, "observers must be removed before deinit")
         pause()
         displayLink?.invalidate()
+        if hasTarget {
+            sharedImageProcessingContext.framebufferCache.purgeAllUnassignedFramebuffers()
+        }
     }
     
     // MARK: Data Source
