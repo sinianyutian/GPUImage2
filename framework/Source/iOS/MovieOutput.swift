@@ -418,8 +418,6 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         } catch {
             print("[Caching] WARNING: Trouble appending pixel buffer at time: \(frameTime) \(error)")
         }
-        
-        CVPixelBufferUnlockBaseAddress(pixelBuffer!, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
     }
     
     private func _processPixelBufferCache(framebuffer: Framebuffer) {
@@ -548,6 +546,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         } else {
             glReadPixels(0, 0, renderFramebuffer.size.width, renderFramebuffer.size.height, GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), CVPixelBufferGetBaseAddress(pixelBuffer))
         }
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
     }
     
     // MARK: Append buffer directly from CMSampleBuffer
@@ -737,7 +736,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
         
         if encodingLiveVideo {
-            Self.movieProcessingContext.runOperationSynchronously(state == .caching ? cache : work)
+            Self.movieProcessingContext.runOperationAsynchronously(state == .caching ? cache : work)
         } else {
             (state == .caching ? cache : work)()
         }

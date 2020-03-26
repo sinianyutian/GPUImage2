@@ -127,6 +127,9 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         assert(observations.isEmpty, "observers must be removed before deinit")
         pause()
         displayLink?.invalidate()
+        if hasTarget {
+            sharedImageProcessingContext.framebufferCache.purgeAllUnassignedFramebuffers()
+        }
     }
     
     // MARK: Data Source
@@ -152,7 +155,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
         lastPlayerItem = item
         self.enableVideoOutput = enableVideoOutput
         _setupPlayerObservers(playerItem: item)
-        if shouldDelayAddPlayerItem && didNotifyEndedItem != nil && didNotifyEndedItem != item {
+        if shouldDelayAddPlayerItem && didNotifyEndedItem != nil && didNotifyEndedItem != item && didNotifyEndedItem != items().last {
             needAddItemAfterDidEndNotify = true
             pendingNewItems.append(item)
             print("[MoviePlayer] pending insert. pendingNewItems:\(pendingNewItems)")
@@ -171,6 +174,7 @@ public class MoviePlayer: AVQueuePlayer, ImageSource {
     }
     
     public func seekItem(_ item: AVPlayerItem, to time: CMTime, toleranceBefore: CMTime = .zero, toleranceAfter: CMTime = .zero, completionHandler: ((Bool) -> Void)? = nil) {
+        print("[MoviePlayer] seek item:\(item) to time:\(time.seconds) toleranceBefore:\(toleranceBefore.seconds) toleranceAfter:\(toleranceAfter.seconds)")
         item.seek(to: time, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter, completionHandler: completionHandler)
         didNotifyEndedItem = nil
     }
