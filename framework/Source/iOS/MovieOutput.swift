@@ -736,7 +736,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
         
         if encodingLiveVideo {
-            Self.movieProcessingContext.runOperationSynchronously(state == .caching ? cache : work)
+            Self.movieProcessingContext.runOperationAsynchronously(state == .caching ? cache : work)
         } else {
             (state == .caching ? cache : work)()
         }
