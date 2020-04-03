@@ -88,9 +88,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     public static let movieProcessingContext: OpenGLContext = {
         var context: OpenGLContext?
+        imageProcessingShareGroup = sharedImageProcessingContext.context.sharegroup
         sharedImageProcessingContext.runOperationSynchronously {
-             context = OpenGLContext()
+            context = OpenGLContext(queueLabel: "com.GPUImage2.MovieOutput.imageProcess")
         }
+        imageProcessingShareGroup = nil
         return context!
     }()
     public private(set) var videoPixelBufferCache = [(CVPixelBuffer, CMTime)]()

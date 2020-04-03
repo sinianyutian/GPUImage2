@@ -27,14 +27,15 @@ public class OpenGLContext: SerialDispatch {
     }()
     
     
-    public let serialDispatchQueue:DispatchQueue = DispatchQueue(label:"com.sunsetlakesoftware.GPUImage.processingQueue", qos: .userInitiated)
+    public let serialDispatchQueue:DispatchQueue
     public let dispatchQueueKey = DispatchSpecificKey<Int>()
     public let dispatchQueueKeyValue: Int
     
     // MARK: -
     // MARK: Initialization and teardown
 
-    init() {
+    init(queueLabel: String? = nil) {
+        serialDispatchQueue = DispatchQueue(label: (queueLabel ?? "com.sunsetlakesoftware.GPUImage.processingQueue"), qos: .userInitiated)
         dispatchQueueKeyValue = dispatchQueKeyValueCounter
         serialDispatchQueue.setSpecific(key:dispatchQueueKey, value:dispatchQueueKeyValue)
         dispatchQueKeyValueCounter += 1
