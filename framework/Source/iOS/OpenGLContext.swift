@@ -30,6 +30,7 @@ public class OpenGLContext: SerialDispatch {
     public let serialDispatchQueue:DispatchQueue
     public let dispatchQueueKey = DispatchSpecificKey<Int>()
     public let dispatchQueueKeyValue: Int
+    public var executeStartTime: TimeInterval?
     
     // MARK: -
     // MARK: Initialization and teardown

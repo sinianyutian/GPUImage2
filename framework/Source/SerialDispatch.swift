@@ -61,7 +61,8 @@ func runOnMainQueue<T>(_ mainThreadOperation:() -> T) -> T {
 // MARK: -
 // MARK: SerialDispatch extension
 
-public protocol SerialDispatch {
+public protocol SerialDispatch: class {
+    var executeStartTime:TimeInterval? { get set }
     var serialDispatchQueue:DispatchQueue { get }
     var dispatchQueueKey:DispatchSpecificKey<Int> { get }
     var dispatchQueueKeyValue:Int { get }
@@ -69,10 +70,20 @@ public protocol SerialDispatch {
 }
 
 public extension SerialDispatch {
+    var alreadyExecuteTime: TimeInterval {
+        if let executeStartTime = executeStartTime {
+            return CACurrentMediaTime() - executeStartTime
+        } else {
+            return 0.0
+        }
+    }
+    
     func runOperationAsynchronously(_ operation:@escaping () -> ()) {
         self.serialDispatchQueue.async {
+            self.executeStartTime = CACurrentMediaTime()
             self.makeCurrentContext()
             operation()
+            self.executeStartTime = nil
         }
     }
     
@@ -82,8 +93,10 @@ public extension SerialDispatch {
             operation()
         } else {
             self.serialDispatchQueue.sync {
+                self.executeStartTime = CACurrentMediaTime()
                 self.makeCurrentContext()
                 operation()
+                self.executeStartTime = nil
             }
         }
     }
