@@ -43,7 +43,6 @@ public enum MovieOutputError: Error, CustomStringConvertible {
 public enum MovieOutputState: String {
     case unknown
     case idle
-    case caching
     case writing
     case finished
     case canceled
@@ -78,9 +77,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     private var ciFilter: CILookupFilter?
     private var cpuCIContext: CIContext?
     public private(set) var pixelBuffer:CVPixelBuffer? = nil
-    public var dropFirstFrames: Int = 0
     public var waitUtilDataIsReadyForLiveVideo = false
-    public private(set) var state = MovieOutputState.unknown
     public private(set) var renderFramebuffer:Framebuffer!
     
     public private(set) var audioSettings:[String:Any]? = nil
@@ -95,12 +92,10 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         imageProcessingShareGroup = nil
         return context!
     }()
-    public private(set) var videoPixelBufferCache = [(CVPixelBuffer, CMTime)]()
-    public private(set) var videoSampleBufferCache = NSMutableArray()
     public private(set) var audioSampleBufferCache = [CMSampleBuffer]()
     public private(set) var cacheBuffersDuration: TimeInterval = 0
     public let disablePixelBufferAttachments: Bool
-    var shouldInvalidateAudioSampleWhenDone = false
+    private var pixelBufferPoolSemaphore = DispatchSemaphore(value: 1)
     
     var synchronizedEncodingDebug = false
     public private(set) var totalVideoFramesAppended = 0
@@ -121,13 +116,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
 
         print("movie output init \(URL)")
         self.url = URL
-
-        imageProcessingShareGroup = sharedImageProcessingContext.context.sharegroup
         
-        if Self.movieProcessingContext.supportsTextureCaches() {
-            self.colorSwizzlingShader = Self.movieProcessingContext.passthroughShader
+        if sharedImageProcessingContext.supportsTextureCaches() {
+            self.colorSwizzlingShader = sharedImageProcessingContext.passthroughShader
         } else {
-            self.colorSwizzlingShader = crashOnShaderCompileFailure("MovieOutput"){try Self.movieProcessingContext.programForVertexShader(defaultVertexShaderForInputs(1), fragmentShader:ColorSwizzlingFragmentShader)}
+            self.colorSwizzlingShader = crashOnShaderCompileFailure("MovieOutput"){try sharedImageProcessingContext.programForVertexShader(defaultVertexShaderForInputs(1), fragmentShader:ColorSwizzlingFragmentShader)}
         }
         
         self.size = size
@@ -168,8 +161,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         
         // You need to use BGRA for the video in order to get realtime encoding. I use a color-swizzling shader to line up glReadPixels' normal RGBA output with the movie input's BGRA.
         let sourcePixelBufferAttributesDictionary:[String:Any] = [kCVPixelBufferPixelFormatTypeKey as String:Int32(kCVPixelFormatType_32BGRA),
-                                                                        kCVPixelBufferWidthKey as String:self.size.width,
-                                                                        kCVPixelBufferHeightKey as String:self.size.height]
+                                                                  kCVPixelBufferWidthKey as String:self.size.width,
+                                                                  kCVPixelBufferHeightKey as String:self.size.height]
         
         assetWriterPixelBufferInput = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput:assetWriterVideoInput, sourcePixelBufferAttributes:sourcePixelBufferAttributesDictionary)
         assetWriter.add(assetWriterVideoInput)
@@ -194,9 +187,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             self?.ciFilter = CILookupFilter(lutImage: lutImage, intensity: intensity, brightnessFactor: brightnessFactor)
         }
         if sync {
-            sharedImageProcessingContext.runOperationSynchronously(block)
+            Self.movieProcessingContext.runOperationSynchronously(block)
         } else {
-            sharedImageProcessingContext.runOperationAsynchronously(block)
+            Self.movieProcessingContext.runOperationAsynchronously(block)
         }
     }
     
@@ -205,13 +198,13 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             self?.ciFilter = nil
         }
         if sync {
-            sharedImageProcessingContext.runOperationSynchronously(block)
+            Self.movieProcessingContext.runOperationSynchronously(block)
         } else {
-            sharedImageProcessingContext.runOperationAsynchronously(block)
+            Self.movieProcessingContext.runOperationAsynchronously(block)
         }
     }
     
-    public func startRecording(sync: Bool = false, manualControlState: Bool = false, _ completionCallback:((_ started: Bool, _ error: Error?) -> Void)? = nil) {
+    public func startRecording(sync: Bool = false, _ completionCallback:((_ started: Bool, _ error: Error?) -> Void)? = nil) {
         // Don't do this work on the movieProcessingContext queue so we don't block it.
         // If it does get blocked framebuffers will pile up from live video and after it is no longer blocked (this work has finished)
         // we will be able to accept framebuffers but the ones that piled up will come in too quickly resulting in most being dropped.
@@ -242,6 +235,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                     throw MovieOutputError.startWritingError(assetWriterError: self.assetWriter.error)
                 }
                 
+                // NOTE: pixelBufferPool is not multi-thread safe, and it will be accessed in another thread in order to improve the performance
+                self.pixelBufferPoolSemaphore.wait()
+                defer {
+                    self.pixelBufferPoolSemaphore.signal()
+                }
                 guard self.assetWriterPixelBufferInput.pixelBufferPool != nil else {
                     /*
                      When the pixelBufferPool returns nil, check the following:
@@ -252,12 +250,6 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                      https://stackoverflow.com/a/20110179/1275014
                      */
                     throw MovieOutputError.pixelBufferPoolNilError
-                }
-                
-                if !manualControlState {
-                    self.state = .writing
-                } else {
-                    self.state = .idle
                 }
                 
                 print("MovieOutput started writing")
@@ -273,37 +265,22 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
         
         if sync {
-            _writerSync(operation: block)
+            Self.movieProcessingContext.runOperationSynchronously(block)
         } else {
-            _writerAsync(operation: block)
+            Self.movieProcessingContext.runOperationAsynchronously(block)
         }
     }
     
-    public func startCachingWithoutWriting(duration: TimeInterval) {
-        print("MovieOutput starting caching. duration:\(duration)")
-        state = .caching
-        cacheBuffersDuration = duration
-    }
-    
-    public func finishCachingAndStartWriting() {
-        print("MovieOutput finish caching and start writing. cached buffer: videoPixelBuffers:\(videoPixelBufferCache.count) audioSampleBuffer:\(audioSampleBufferCache.count) videoSampleBuffers:\(videoSampleBufferCache.count)")
-        state = .writing
-    }
-    
-    public func finishRecording(_ completionCallback:(() -> Void)? = nil) {
+    public func finishRecording(sync: Bool = false, _ completionCallback:(() -> Void)? = nil) {
         print("MovieOutput start finishing writing, optimizeForNetworkUse:\(assetWriter.shouldOptimizeForNetworkUse)")
-        _writerAsync { [weak self] in
-            self?._cleanBufferCaches(shouldAppend: true)
-            guard let self = self, self.state == .writing,
-                self.assetWriter.status == .writing else {
-                    completionCallback?()
-                    return
+        let block = {
+            guard self.assetWriter.status == .writing else {
+                completionCallback?()
+                return
             }
             
             self.audioEncodingIsFinished = true
             self.videoEncodingIsFinished = true
-            
-            self.state = .finished
             
             self.assetWriterAudioInput?.markAsFinished()
             self.assetWriterVideoInput.markAsFinished()
@@ -313,6 +290,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 // Documentation: "You do not need to call this method; if you call finishWriting without
                 // calling this method, the session's effective end time will be the latest end timestamp of
                 // the session's samples (that is, no samples will be edited out at the end)."
+                print("MovieOutput start endSession")
                 self.assetWriter.endSession(atSourceTime: lastFrame)
             }
             
@@ -320,217 +298,144 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 self.recordedDuration = lastFrame - startFrame
             }
             print("MovieOutput did start finishing writing. Total frames appended video::\(self.totalVideoFramesAppended) audio:\(self.totalAudioFramesAppended)")
+            // Calling "finishWriting(AVAssetWriter A)" then "startWriting(AVAssetWriter B)" at the same time,
+            // will cause NSInternalInconsistencyException with error code 0.
+            // So we need to make sure these two methods will not run at the same time.
+            let dispatchGroup = DispatchGroup()
+            dispatchGroup.enter()
             self.assetWriter.finishWriting {
                 print("MovieOutput did finish writing")
+                dispatchGroup.leave()
                 completionCallback?()
             }
+            dispatchGroup.wait()
+        }
+        if sync {
+            Self.movieProcessingContext.runOperationSynchronously(block)
+        } else {
+            Self.movieProcessingContext.runOperationAsynchronously(block)
         }
     }
     
-    public func cancelRecording(_ completionCallback:(() -> Void)? = nil) {
-        _writerAsync { [weak self] in
-            self?._cleanBufferCaches(shouldAppend: false)
-            guard let self = self else {
-                completionCallback?()
-                return
-            }
-            self.state = .canceled
+    public func cancelRecording(sync: Bool = false, _ completionCallback:(() -> Void)? = nil) {
+        let block = {
             self.audioEncodingIsFinished = true
             self.videoEncodingIsFinished = true
             print("MovieOutput cancel writing, state:\(self.assetWriter.status.rawValue)")
             if self.assetWriter.status == .writing {
+                self.pixelBufferPoolSemaphore.wait()
                 self.assetWriter.cancelWriting()
+                self.pixelBufferPoolSemaphore.signal()
             }
             completionCallback?()
         }
-    }
-    
-    private func _shouldProcessVideoBuffer() -> Bool {
-        guard state == .caching || state == .writing, assetWriter.status == .writing, !videoEncodingIsFinished else {
-            print("Guard fell through, dropping video frame. state:\(self.state) writer.state:\(self.assetWriter.status.rawValue) videoEncodingIsFinished:\(self.videoEncodingIsFinished)")
-            return false
-        }
-        return true
-    }
-    
-    private func _cleanBufferCaches(shouldAppend: Bool) {
-        print("[Caching] Drain all buffers videoPixelBuffers:\(videoPixelBufferCache.count) audioSampleBuffer:\(audioSampleBufferCache.count) videoSampleBuffers:\(videoSampleBufferCache.count)")
-        Self.movieProcessingContext.runOperationSynchronously {
-            if shouldAppend {
-                self._appendPixelBuffersFromCache()
-                self._appendAudioBuffersFromCache()
-                self._appendVideoSampleBuffersFromCache()
-            }
-            self.videoPixelBufferCache.removeAll()
-            self.videoSampleBufferCache.removeAllObjects()
-            self.audioSampleBufferCache.removeAll()
+        if sync {
+            Self.movieProcessingContext.runOperationSynchronously(block)
+        } else {
+            Self.movieProcessingContext.runOperationAsynchronously(block)
         }
     }
     
     public func newFramebufferAvailable(_ framebuffer:Framebuffer, fromSourceIndex:UInt) {
         glFinish()
         
-        if previousFrameTime == nil && videoSampleBufferCache.count <= 0 && videoPixelBufferCache.isEmpty && (state == .caching || state == .writing) {
+        if previousFrameTime == nil {
             debugPrint("starting process new framebuffer when previousFrameTime == nil")
         }
         
         let work = { [weak self] in
-            if self?.state == .caching {
-                self?._renderAndCache(framebuffer: framebuffer)
-            } else {
-                self?._processPixelBufferCache(framebuffer: framebuffer)
-            }
-            self?.isProcessing = false
+            _ = self?._processFramebuffer(framebuffer)
             sharedImageProcessingContext.runOperationAsynchronously {
                 framebuffer.unlock()
             }
         }
-
         if encodingLiveVideo {
-            // This is done asynchronously to reduce the amount of work done on the sharedImageProcessingContext que
+            // This is done asynchronously to reduce the amount of work done on the sharedImageProcessingContext queue,
             // so we can decrease the risk of frames being dropped by the camera. I believe it is unlikely a backlog of framebuffers will occur
             // since the framebuffers come in much slower than during synchronized encoding.
-            guard !isProcessing else {
-                framebuffer.unlock()
-                return
-            }
-            isProcessing = true
-            Self.movieProcessingContext.runOperationAsynchronously(work)
+            sharedImageProcessingContext.runOperationAsynchronously(work)
         }
         else {
             // This is done synchronously to prevent framebuffers from piling up during synchronized encoding.
             // If we don't force the sharedImageProcessingContext queue to wait for this frame to finish processing it will
             // keep sending frames whenever isReadyForMoreMediaData = true but the movieProcessingContext queue would run when the system wants it to.
-            Self.movieProcessingContext.runOperationSynchronously(work)
+            sharedImageProcessingContext.runOperationSynchronously(work)
         }
     }
     
-    private func _renderAndCache(framebuffer: Framebuffer) {
-        // Discard first n frames
-        if dropFirstFrames > 0 {
-            dropFirstFrames -= 1
-            print("Drop one frame. Left dropFirstFrames:\(dropFirstFrames)")
-            return
-        }
-        guard _shouldProcessVideoBuffer() else { return }
-        guard let frameTime = framebuffer.timingStyle.timestamp?.asCMTime else {
-            print("Cannot get timestamp from framebuffer, dropping frame")
-            return
-        }
-        pixelBuffer = nil
-        let pixelBufferStatus = CVPixelBufferPoolCreatePixelBuffer(nil, assetWriterPixelBufferInput.pixelBufferPool!, &pixelBuffer)
-        guard pixelBuffer != nil && pixelBufferStatus == kCVReturnSuccess else {
-            print("[Caching] WARNING: Unable to create pixel buffer, dropping frame")
-            return
+    func _processFramebuffer(_ framebuffer: Framebuffer) -> Bool {
+        guard assetWriter.status == .writing, !videoEncodingIsFinished else {
+            print("Guard fell through, dropping video frame. writer.state:\(self.assetWriter.status.rawValue) videoEncodingIsFinished:\(self.videoEncodingIsFinished)")
+            return false
         }
         do {
+            // Ignore still images and other non-video updates (do I still need this?)
+            guard let frameTime = framebuffer.timingStyle.timestamp?.asCMTime else {
+                print("Cannot get timestamp from framebuffer, dropping frame")
+                return false
+            }
+            
+            // If two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case.
+            guard frameTime != previousFrameTime else {
+                print("WARNING: frameTime is as same as previousFrameTIme")
+                return true
+            }
+            
+            if previousFrameTime == nil {
+                // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
+                assetWriter.startSession(atSourceTime: frameTime)
+                startFrameTime = frameTime
+                print("did start writing at:\(frameTime.seconds)")
+                delegate?.movieOutputDidStartWriting(self, at: frameTime)
+            }
+            previousFrameTime = frameTime
+            
+            pixelBuffer = nil
+            pixelBufferPoolSemaphore.wait()
+            let pixelBufferStatus = CVPixelBufferPoolCreatePixelBuffer(nil, assetWriterPixelBufferInput.pixelBufferPool!, &pixelBuffer)
+            pixelBufferPoolSemaphore.signal()
+            guard pixelBuffer != nil && pixelBufferStatus == kCVReturnSuccess else {
+                print("WARNING: Unable to create pixel buffer, dropping frame")
+                return false
+            }
             try renderIntoPixelBuffer(pixelBuffer!, framebuffer:framebuffer)
-            videoPixelBufferCache.append((pixelBuffer!, frameTime))
-//            print("[Caching] appended new buffer at:\(frameTime.seconds)")
-            while let firstBufferTime = videoPixelBufferCache.first?.1, CMTimeSubtract(frameTime, firstBufferTime).seconds > cacheBuffersDuration {
-                _ = videoPixelBufferCache.removeFirst()
-//                print("[Caching] caching video duration reach up to:\(cacheBuffersDuration) dropped frame at:\(firstBuffer.1.seconds)")
+            guard assetWriterVideoInput.isReadyForMoreMediaData || shouldWaitForEncoding else {
+                print("WARNING: Had to drop a frame at time \(frameTime)")
+                return false
             }
-        } catch {
-            print("[Caching] WARNING: Trouble appending pixel buffer at time: \(frameTime) \(error)")
-        }
-    }
-    
-    private func _processPixelBufferCache(framebuffer: Framebuffer) {
-        if previousFrameTime == nil {
-            debugPrint("Got a new framebuffer when previousFrameTime is nil")
-        }
-        // Discard first n frames
-        if dropFirstFrames > 0 {
-            dropFirstFrames -= 1
-            print("Drop one frame. Left dropFirstFrames:\(dropFirstFrames)")
-            return
-        }
-        
-        guard _shouldProcessVideoBuffer() else { return }
-        
-        // Ignore still images and other non-video updates (do I still need this?)
-        guard let frameTime = framebuffer.timingStyle.timestamp?.asCMTime else {
-            print("Cannot get timestamp from framebuffer, dropping frame")
-            return
-        }
-        
-        // If two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case.
-        guard (frameTime != previousFrameTime) else {
-            print("WARNING: frameTime is as same as previousFrameTIme")
-            return
-        }
-        
-        if (previousFrameTime == nil) {
-            // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
-            let startFrameTime = videoPixelBufferCache.first?.1 ?? frameTime
-            assetWriter.startSession(atSourceTime: startFrameTime)
-            self.startFrameTime = startFrameTime
-            print("did start writing at:\(startFrameTime.seconds)")
-            delegate?.movieOutputDidStartWriting(self, at: startFrameTime)
-        }
-        
-        previousFrameTime = frameTime
-
-        guard assetWriterVideoInput.isReadyForMoreMediaData || shouldWaitForEncoding else {
-            print("WARNING: Had to drop a frame at time \(frameTime)")
-            return
-        }
-        
-        while !assetWriterVideoInput.isReadyForMoreMediaData && shouldWaitForEncoding && !videoEncodingIsFinished {
-            print("Video waiting...")
-            // Better to poll isReadyForMoreMediaData often since when it does become true
-            // we don't want to risk letting framebuffers pile up in between poll intervals.
-            usleep(100000) // 0.1 seconds
-            if markIsFinishedAfterProcessing {
-                print("set videoEncodingIsFinished to true after processing")
-                markIsFinishedAfterProcessing = false
-                videoEncodingIsFinished = true
-            }
-        }
-        
-        if !videoPixelBufferCache.isEmpty {
-            // If videoPixelBufferCache has too much buffers, processing current buffers to ease the burden of videoInput, or it will crash
-            _appendPixelBuffersFromCache()
-            _renderAndCache(framebuffer: framebuffer)
-            _appendPixelBuffersFromCache()
-        } else {
-            _renderAndCache(framebuffer: framebuffer)
-            _appendPixelBuffersFromCache()
-        }
-    }
-    
-    private func _appendPixelBuffersFromCache() {
-        guard state == .writing, assetWriter.status == .writing else { return }
-        var appendedBufferCount = 0
-        do {
-            // Drain all cached buffers at first
-            if !videoPixelBufferCache.isEmpty {
-                for (_, (buffer, time)) in videoPixelBufferCache.enumerated() {
-                    //                        debugPrint("appending video pixel buffer \(i+1)/\(self.videoPixelBufferCache.count) at:\(time.seconds)")
-                    if !assetWriterVideoInput.isReadyForMoreMediaData {
-                        // Avoid error when calling bufferInput.append
-                        print("WARNING: video input is not ready at time: \(time))")
-                        break
-                    }
-                    let bufferInput = assetWriterPixelBufferInput
-                    var appendResult = false
-                    // NOTE: when NSException was triggered within NSObject.catchException, the object inside the block seems cannot be released correctly, so be careful not to trigger error, or directly use "self."
-                    try NSObject.catchException {
-                        appendResult = bufferInput.append(buffer, withPresentationTime: time)
-                    }
-                    if !appendResult {
-                        print("WARNING: Trouble appending pixel buffer at time: \(time) \(String(describing: self.assetWriter.error))")
-                        break
-                    }
-                    appendedBufferCount += 1
-                    self.totalVideoFramesAppended += 1
+            while !assetWriterVideoInput.isReadyForMoreMediaData && shouldWaitForEncoding && !videoEncodingIsFinished {
+                synchronizedEncodingDebugPrint("Video waiting...")
+                // Better to poll isReadyForMoreMediaData often since when it does become true
+                // we don't want to risk letting framebuffers pile up in between poll intervals.
+                usleep(100000) // 0.1 seconds
+                if markIsFinishedAfterProcessing {
+                    synchronizedEncodingDebugPrint("set videoEncodingIsFinished to true after processing")
+                    markIsFinishedAfterProcessing = false
+                    videoEncodingIsFinished = true
                 }
             }
+            let bufferInput = assetWriterPixelBufferInput
+            var appendResult = false
+            synchronizedEncodingDebugPrint("appending video framebuffer at:\(frameTime.seconds)")
+            // NOTE: when NSException was triggered within NSObject.catchException, the object inside the block seems cannot be released correctly, so be careful not to trigger error, or directly use "self."
+            try NSObject.catchException {
+                appendResult = bufferInput.append(self.pixelBuffer!, withPresentationTime: frameTime)
+            }
+            if !appendResult {
+                print("WARNING: Trouble appending pixel buffer at time: \(frameTime) \(String(describing: self.assetWriter.error))")
+                return false
+            }
+            totalVideoFramesAppended += 1
+            
+            if videoEncodingIsFinished {
+                assetWriterVideoInput.markAsFinished()
+            }
+            
+            return true
         } catch {
             print("WARNING: Trouble appending pixel buffer \(error)")
+            return false
         }
-        videoPixelBufferCache.removeFirst(appendedBufferCount)
     }
     
     func renderIntoPixelBuffer(_ pixelBuffer:CVPixelBuffer, framebuffer:Framebuffer) throws {
@@ -544,21 +449,21 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         
         let bufferSize = GLSize(self.size)
         var cachedTextureRef:CVOpenGLESTexture? = nil
-        let ret = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, Self.movieProcessingContext.coreVideoTextureCache, pixelBuffer, nil, GLenum(GL_TEXTURE_2D), GL_RGBA, bufferSize.width, bufferSize.height, GLenum(GL_BGRA), GLenum(GL_UNSIGNED_BYTE), 0, &cachedTextureRef)
+        let ret = CVOpenGLESTextureCacheCreateTextureFromImage(kCFAllocatorDefault, sharedImageProcessingContext.coreVideoTextureCache, pixelBuffer, nil, GLenum(GL_TEXTURE_2D), GL_RGBA, bufferSize.width, bufferSize.height, GLenum(GL_BGRA), GLenum(GL_UNSIGNED_BYTE), 0, &cachedTextureRef)
         if ret != kCVReturnSuccess {
             print("ret error: \(ret), pixelBuffer: \(pixelBuffer)")
             return
         }
         let cachedTexture = CVOpenGLESTextureGetName(cachedTextureRef!)
         
-        renderFramebuffer = try Framebuffer(context:Self.movieProcessingContext, orientation:.portrait, size:bufferSize, textureOnly:false, overriddenTexture:cachedTexture)
+        renderFramebuffer = try Framebuffer(context:sharedImageProcessingContext, orientation:.portrait, size:bufferSize, textureOnly:false, overriddenTexture:cachedTexture)
         
         renderFramebuffer.activateFramebufferForRendering()
         clearFramebufferWithColor(Color.black)
         CVPixelBufferLockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue:CVOptionFlags(0)))
-        renderQuadWithShader(colorSwizzlingShader, uniformSettings:ShaderUniformSettings(), vertexBufferObject:Self.movieProcessingContext.standardImageVBO, inputTextures:[framebuffer.texturePropertiesForOutputRotation(.noRotation)], context: Self.movieProcessingContext)
+        renderQuadWithShader(colorSwizzlingShader, uniformSettings:ShaderUniformSettings(), vertexBufferObject:sharedImageProcessingContext.standardImageVBO, inputTextures:[framebuffer.texturePropertiesForOutputRotation(.noRotation)], context: sharedImageProcessingContext)
         
-        if Self.movieProcessingContext.supportsTextureCaches() {
+        if sharedImageProcessingContext.supportsTextureCaches() {
             glFinish()
         } else {
             glReadPixels(0, 0, renderFramebuffer.size.width, renderFramebuffer.size.height, GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), CVPixelBufferGetBaseAddress(pixelBuffer))
@@ -568,114 +473,90 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     // MARK: Append buffer directly from CMSampleBuffer
     public func processVideoBuffer(_ sampleBuffer: CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool) {
-        let cache = { [weak self] in
-            guard let self = self else { return }
-            guard self._shouldProcessVideoBuffer() else { return }
-            
-            let frameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            
-            self.videoSampleBufferCache.add(sampleBuffer)
-//            debugPrint("[Caching] cache new video sample buffer at:\(frameTime.seconds)")
-            if self.videoSampleBufferCache.count >= 13 && self.encodingLiveVideo {
-                // Be careful of caching too much sample buffers from camera captureOutput. iOS has a hard limit of camera buffer count: 15.
-//                debugPrint("WARNING: almost reach system buffer limit: \(self.videoSampleBufferCache.count)/15")
-            }
-            while let firstBuffer = self.videoSampleBufferCache.firstObject, CMTimeSubtract(frameTime, CMSampleBufferGetPresentationTimeStamp(firstBuffer as! CMSampleBuffer)).seconds > self.cacheBuffersDuration {
-                self.videoSampleBufferCache.removeObject(at: 0)
-//                debugPrint("[Caching] caching video duration reach up to:\(self.cacheBuffersDuration) dropped frame at:\(CMSampleBufferGetPresentationTimeStamp(firstBuffer as! CMSampleBuffer).seconds)")
-            }
-        }
-        
         let work = { [weak self] in
-            defer {
-                if(shouldInvalidateSampleWhenDone) {
-                    CMSampleBufferInvalidate(sampleBuffer)
-                }
-            }
-            guard let self = self else { return }
-            guard self._shouldProcessVideoBuffer() else { return }
-            
-            let frameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            
-            // If two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case.
-            guard (frameTime != self.previousFrameTime) else {
-                print("Cannot get timestamp from framebuffer, dropping frame")
-                return
-            }
-            
-            self.videoSampleBufferCache.add(sampleBuffer)
-            
-            if (self.previousFrameTime == nil) {
-                // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
-                let startFrameTime = self.videoSampleBufferCache.firstObject.map { CMSampleBufferGetPresentationTimeStamp($0 as! CMSampleBuffer) } ?? frameTime
-                self.assetWriter.startSession(atSourceTime: startFrameTime)
-                self.startFrameTime = startFrameTime
-                self.delegate?.movieOutputDidStartWriting(self, at: startFrameTime)
-            }
-            
-            self.previousFrameTime = frameTime
-            
-            guard (self.assetWriterVideoInput.isReadyForMoreMediaData || self.shouldWaitForEncoding) else {
-                print("Had to drop a frame at time \(frameTime)")
-                return
-            }
-            
-            while(!self.assetWriterVideoInput.isReadyForMoreMediaData && self.shouldWaitForEncoding && !self.videoEncodingIsFinished) {
-                print("Video waiting...")
-                // Better to poll isReadyForMoreMediaData often since when it does become true
-                // we don't want to risk letting framebuffers pile up in between poll intervals.
-                usleep(100000) // 0.1 seconds
-            }
-            self._appendVideoSampleBuffersFromCache()
+            _ = self?._processVideoSampleBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: shouldInvalidateSampleWhenDone)
         }
         
         if encodingLiveVideo {
-            Self.movieProcessingContext.runOperationSynchronously(state == .caching ? cache : work)
+            Self.movieProcessingContext.runOperationSynchronously(work)
         } else {
-            (state == .caching ? cache : work)()
+            work()
         }
     }
     
-    private func _appendVideoSampleBuffersFromCache() {
-        guard state == .writing, assetWriter.status == .writing else { return }
-        var appendedBufferCount = 0
-        var time: CMTime = .zero
-        do {
-            // Drain all cached buffers at first
-            for (i, sampleBufferObject) in self.videoSampleBufferCache.enumerated() {
-                let sampleBuffer = sampleBufferObject as! CMSampleBuffer
-                time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                debugPrint("appending video sample buffer \(i+1)/\(self.videoSampleBufferCache.count) at:\(time.seconds)")
-                guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-                    print("WARNING: Cannot get pixel buffer from sampleBuffer:\(sampleBuffer)")
-                    break
-                }
-                if !self.assetWriterVideoInput.isReadyForMoreMediaData {
-                    print("WARNING: video input is not ready at time: \(time))")
-                    break
-                }
-                if let ciFilter = ciFilter {
-                    let originalImage = CIImage(cvPixelBuffer: buffer)
-                    if let outputImage = ciFilter.applyFilter(on: originalImage), let ciContext = cpuCIContext {
-                        ciContext.render(outputImage, to: buffer)
-                    }
-                }
-                let bufferInput = self.assetWriterPixelBufferInput
-                var appendResult = false
-                try NSObject.catchException {
-                    appendResult = bufferInput.append(buffer, withPresentationTime: time)
-                }
-                if (!appendResult) {
-                    print("WARNING: Trouble appending pixel buffer at time: \(time) \(String(describing: self.assetWriter.error))")
-                    break
-                }
-                appendedBufferCount += 1
-                self.totalVideoFramesAppended += 1
+    func _processVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer, shouldInvalidateSampleWhenDone: Bool) -> Bool {
+        defer {
+            if shouldInvalidateSampleWhenDone {
+                CMSampleBufferInvalidate(sampleBuffer)
             }
+        }
+        
+        guard assetWriter.status == .writing, !videoEncodingIsFinished else {
+            print("Guard fell through, dropping video frame. writer.state:\(self.assetWriter.status.rawValue) videoEncodingIsFinished:\(self.videoEncodingIsFinished)")
+            return false
+        }
+        
+        let frameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        
+        // If two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case.
+        guard (frameTime != previousFrameTime) else {
+            print("Cannot get timestamp from framebuffer, dropping frame")
+            return false
+        }
+        
+        if previousFrameTime == nil {
+            // This resolves black frames at the beginning. Any samples recieved before this time will be edited out.
+            let startFrameTime = frameTime
+            assetWriter.startSession(atSourceTime: startFrameTime)
+            self.startFrameTime = startFrameTime
+            delegate?.movieOutputDidStartWriting(self, at: startFrameTime)
+        }
+        
+        previousFrameTime = frameTime
+        
+        guard (assetWriterVideoInput.isReadyForMoreMediaData || self.shouldWaitForEncoding) else {
+            print("Had to drop a frame at time \(frameTime)")
+            return false
+        }
+        
+        while !assetWriterVideoInput.isReadyForMoreMediaData && shouldWaitForEncoding && !videoEncodingIsFinished {
+            self.synchronizedEncodingDebugPrint("Video waiting...")
+            // Better to poll isReadyForMoreMediaData often since when it does become true
+            // we don't want to risk letting framebuffers pile up in between poll intervals.
+            usleep(100000) // 0.1 seconds
+        }
+        let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        synchronizedEncodingDebugPrint("appending video sample buffer at:\(time.seconds)")
+        guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            print("WARNING: Cannot get pixel buffer from sampleBuffer:\(sampleBuffer)")
+            return false
+        }
+        if !assetWriterVideoInput.isReadyForMoreMediaData {
+            print("WARNING: video input is not ready at time: \(time))")
+            return false
+        }
+        if let ciFilter = ciFilter {
+            let originalImage = CIImage(cvPixelBuffer: buffer)
+            if let outputImage = ciFilter.applyFilter(on: originalImage), let ciContext = cpuCIContext {
+                ciContext.render(outputImage, to: buffer)
+            }
+        }
+        let bufferInput = assetWriterPixelBufferInput
+        do {
+            var appendResult = false
+            try NSObject.catchException {
+                appendResult = bufferInput.append(buffer, withPresentationTime: time)
+            }
+            if (!appendResult) {
+                print("WARNING: Trouble appending pixel buffer at time: \(time) \(String(describing: assetWriter.error))")
+                return false
+            }
+            totalVideoFramesAppended += 1
         } catch {
             print("WARNING: Trouble appending video sample buffer at time: \(time) \(error)")
+            return false
         }
-        self.videoSampleBufferCache.removeObjects(in: NSRange(0..<appendedBufferCount))
+        return true
     }
     
     // MARK: -
@@ -694,84 +575,49 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         assetWriterAudioInput?.expectsMediaDataInRealTime = encodingLiveVideo
     }
     
-    private func _shouldProcessAudioBuffer() -> Bool {
-        guard state == .caching || state == .writing, assetWriter.status == .writing, !audioEncodingIsFinished else {
-            print("Guard fell through, dropping audio sample, state:\(self.state) writer.state:\(self.assetWriter.status.rawValue) audioEncodingIsFinished:\(self.audioEncodingIsFinished)")
+    public func processAudioBuffer(_ sampleBuffer:CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool) {
+        let work = { [weak self] in
+            _ = self?._processAudioSampleBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: shouldInvalidateSampleWhenDone)
+        }
+        if encodingLiveVideo {
+            Self.movieProcessingContext.runOperationAsynchronously(work)
+        } else {
+            work()
+        }
+    }
+    
+    func _processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer, shouldInvalidateSampleWhenDone: Bool) -> Bool {
+        guard assetWriter.status == .writing, !audioEncodingIsFinished, let audioInput = assetWriterAudioInput else {
+            print("Guard fell through, dropping audio sample, writer.state:\(assetWriter.status.rawValue) audioEncodingIsFinished:\(audioEncodingIsFinished)")
             return false
         }
-        return true
-    }
-    
-    public func processAudioBuffer(_ sampleBuffer:CMSampleBuffer, shouldInvalidateSampleWhenDone:Bool) {
-        shouldInvalidateAudioSampleWhenDone = shouldInvalidateSampleWhenDone
-        let cache = { [weak self] in
-            guard let self = self else { return }
-            guard self._shouldProcessAudioBuffer() else {
-                if shouldInvalidateSampleWhenDone {
-                    CMSampleBufferInvalidate(sampleBuffer)
-                }
-                return
-            }
-            let frameTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            self.audioSampleBufferCache.append(sampleBuffer)
-            while let firstBuffer = self.audioSampleBufferCache.first, CMTimeSubtract(frameTime, CMSampleBufferGetPresentationTimeStamp(firstBuffer)).seconds > self.cacheBuffersDuration {
-                _ = self.audioSampleBufferCache.removeFirst()
-//                debugPrint("[Caching] caching audio duration reach up to:\(self.cacheBuffersDuration) dropped frame at:\(CMSampleBufferGetPresentationTimeStamp(firstBuffer).seconds)")
-            }
+        
+        // Always accept audio buffer and cache it at first, since video frame might delay a bit
+        audioSampleBufferCache.append(sampleBuffer)
+        guard previousFrameTime != nil else {
+            print("Process audio sample but first video frame is not ready yet. Time:\(CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer).seconds)")
+            return true
         }
         
-        let work = { [weak self] in
-            guard let self = self else { return }
-            guard self._shouldProcessAudioBuffer(), let assetWriterAudioInput = self.assetWriterAudioInput else {
-                if shouldInvalidateSampleWhenDone {
-                    CMSampleBufferInvalidate(sampleBuffer)
-                }
-                return
-            }
-            
-            let currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer)
-            self.audioSampleBufferCache.append(sampleBuffer)
-            
-            guard (assetWriterAudioInput.isReadyForMoreMediaData || self.shouldWaitForEncoding) else {
+        var processedBufferCount = 0
+        for audioBuffer in audioSampleBufferCache {
+            let currentSampleTime = CMSampleBufferGetOutputPresentationTimeStamp(audioBuffer)
+            guard audioInput.isReadyForMoreMediaData || shouldWaitForEncoding else {
                 print("Had to delay a audio sample at time \(currentSampleTime)")
-                return
+                break
             }
             
-            while(!assetWriterAudioInput.isReadyForMoreMediaData && self.shouldWaitForEncoding && !self.audioEncodingIsFinished) {
+            while !audioInput.isReadyForMoreMediaData && shouldWaitForEncoding && !audioEncodingIsFinished {
                 print("Audio waiting...")
                 usleep(100000)
-                if !assetWriterAudioInput.isReadyForMoreMediaData {
-                    print("Audio still not ready, skip this runloop...")
-                    return
-                }
-            }
-            
-            guard self.previousFrameTime != nil else {
-                print("Add audio sample to pending queue but first video frame is not ready yet. Time:\(CMTimeGetSeconds(currentSampleTime))")
-                return
-            }
-            
-            self.synchronizedEncodingDebugPrint("Process audio sample output. Time:\(CMTimeGetSeconds(currentSampleTime))")
-            self._appendAudioBuffersFromCache()
-        }
-        
-        if encodingLiveVideo {
-            Self.movieProcessingContext.runOperationAsynchronously(state == .caching ? cache : work)
-        } else {
-            (state == .caching ? cache : work)()
-        }
-    }
-    
-    private func _appendAudioBuffersFromCache() {
-        guard let audioInput = assetWriterAudioInput, state == .writing, assetWriter.status == .writing else { return }
-        var appendedBufferCount = 0
-        do {
-            for (_, audioBuffer) in audioSampleBufferCache.enumerated() {
-                //                        debugPrint("[Caching] appending audio buffer \(i+1)/\(self.audioSampleBufferCache.count) at:\(CMSampleBufferGetOutputPresentationTimeStamp(audioBuffer).seconds)")
                 if !audioInput.isReadyForMoreMediaData {
-                    print("WARNING: audio input is not ready at: \(CMSampleBufferGetPresentationTimeStamp(audioBuffer).seconds)")
+                    synchronizedEncodingDebugPrint("Audio still not ready, skip this runloop...")
                     break
                 }
+            }
+            
+            synchronizedEncodingDebugPrint("Process audio sample output. Time:\(currentSampleTime.seconds)")
+            do {
                 var appendResult = false
                 try NSObject.catchException {
                     appendResult = audioInput.append(audioBuffer)
@@ -780,22 +626,24 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                     print("WARNING: Trouble appending audio sample buffer: \(String(describing: self.assetWriter.error))")
                     break
                 }
-                appendedBufferCount += 1
                 totalAudioFramesAppended += 1
-                if shouldInvalidateAudioSampleWhenDone {
+                if shouldInvalidateSampleWhenDone {
                     CMSampleBufferInvalidate(audioBuffer)
                 }
+                processedBufferCount += 1
+            }
+            catch {
+                print("WARNING: Trouble appending audio sample buffer: \(error)")
+                break
             }
         }
-        catch {
-            print("WARNING: Trouble appending audio sample buffer: \(error)")
-        }
-        self.audioSampleBufferCache.removeFirst(appendedBufferCount)
+        audioSampleBufferCache.removeFirst(processedBufferCount)
+        return true
     }
     
     public func flushPendingAudioBuffers(shouldInvalidateSampleWhenDone: Bool) {
         guard let lastBuffer = audioSampleBufferCache.popLast() else { return }
-        processAudioBuffer(lastBuffer, shouldInvalidateSampleWhenDone: shouldInvalidateSampleWhenDone)
+        _ = _processAudioSampleBuffer(lastBuffer, shouldInvalidateSampleWhenDone: shouldInvalidateSampleWhenDone)
     }
     
     // Note: This is not used for synchronized encoding, only live video.
@@ -805,18 +653,6 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     func synchronizedEncodingDebugPrint(_ string: String) {
         if(synchronizedEncodingDebug && !encodingLiveVideo) { print(string) }
-    }
-    
-    private func _writerAsync(operation: @escaping () -> Void) {
-        MovieOutput.assetWriterQueue.async {
-            Self.movieProcessingContext.runOperationSynchronously(operation)
-        }
-    }
-    
-    private func _writerSync(operation: @escaping () -> Void) {
-        MovieOutput.assetWriterQueue.sync {
-            Self.movieProcessingContext.runOperationSynchronously(operation)
-        }
     }
 }
 
