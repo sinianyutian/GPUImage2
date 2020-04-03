@@ -445,7 +445,7 @@ public class MovieInput: ImageSource {
         
         self.synchronizedEncodingDebugPrint("Process audio sample input. Time:\(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)))")
         
-        if let movieOutput = self.synchronizedMovieOutput {
+        if synchronizedMovieOutput != nil {
             MovieOutput.movieProcessingContext.runOperationAsynchronously { [weak self] in
                 guard let self = self else { return }
                 self.audioEncodingTarget?.processAudioBuffer(sampleBuffer, shouldInvalidateSampleWhenDone: shouldInvalidate)
