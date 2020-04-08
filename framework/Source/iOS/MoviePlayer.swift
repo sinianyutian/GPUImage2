@@ -514,12 +514,12 @@ private extension MoviePlayer {
     }
     
     func playerStatusDidChange() {
-        debugPrint("[MoviePlayer] Player status change to:\(status.rawValue) asset:\(String(describing: asset)) currentTime:\(currentTime().seconds)")
+        debugPrint("[MoviePlayer] Player status change to:\(status.rawValue) asset:\(String(describing: asset))")
         resumeIfNeeded()
     }
     
     func playerItemStatusDidChange(_ playerItem: AVPlayerItem) {
-        debugPrint("[MoviePlayer] PlayerItem status change to:\(playerItem.status.rawValue) asset:\(playerItem.asset) currentTime:\(currentTime().seconds)")
+        debugPrint("[MoviePlayer] PlayerItem status change to:\(playerItem.status.rawValue) asset:\(playerItem.asset)")
         if playerItem == currentItem {
             resumeIfNeeded()
         }
