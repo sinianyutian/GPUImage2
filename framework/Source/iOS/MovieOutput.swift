@@ -97,6 +97,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     public private(set) var videoSampleBufferCache = NSMutableArray()
     public private(set) var audioSampleBufferCache = [CMSampleBuffer]()
     public private(set) var cacheBuffersDuration: TimeInterval = 0
+    public let disablePixelBufferAttachments: Bool
     var shouldInvalidateAudioSampleWhenDone = false
     
     var synchronizedEncodingDebug = false
@@ -112,7 +113,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     var preferredTransform: CGAffineTransform?
     
-    public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, optimizeForNetworkUse: Bool = false, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil) throws {
+    public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, optimizeForNetworkUse: Bool = false, disablePixelBufferAttachments: Bool = true, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil) throws {
 
         print("movie output init \(URL)")
         self.url = URL
@@ -168,6 +169,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         
         assetWriterPixelBufferInput = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput:assetWriterVideoInput, sourcePixelBufferAttributes:sourcePixelBufferAttributesDictionary)
         assetWriter.add(assetWriterVideoInput)
+        
+        self.disablePixelBufferAttachments = disablePixelBufferAttachments
         
         self.audioSettings = audioSettings
         self.audioSourceFormatHint = audioSourceFormatHint
@@ -523,7 +526,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     
     func renderIntoPixelBuffer(_ pixelBuffer:CVPixelBuffer, framebuffer:Framebuffer) throws {
         // Is this the first pixel buffer we have recieved?
-        if(renderFramebuffer == nil) {
+        // NOTE: this will cause strange frame brightness blinking for the first few seconds, be careful about using this.
+        if renderFramebuffer == nil && !disablePixelBufferAttachments {
             CVBufferSetAttachment(pixelBuffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
             CVBufferSetAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_601_4, .shouldPropagate)
             CVBufferSetAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
