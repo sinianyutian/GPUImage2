@@ -101,7 +101,8 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     var shouldInvalidateAudioSampleWhenDone = false
     
     var synchronizedEncodingDebug = false
-    public private(set) var totalFramesAppended:Int = 0
+    public private(set) var totalVideoFramesAppended = 0
+    public private(set) var totalAudioFramesAppended = 0
     private var observations = [NSKeyValueObservation]()
     
     deinit {
@@ -112,6 +113,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         return !encodingLiveVideo || waitUtilDataIsReadyForLiveVideo
     }
     var preferredTransform: CGAffineTransform?
+    private var isProcessing = false
     
     public init(URL:Foundation.URL, size:Size, fileType:AVFileType = .mov, liveVideo:Bool = false, videoSettings:[String:Any]? = nil, videoNaturalTimeScale:CMTimeScale? = nil, optimizeForNetworkUse: Bool = false, disablePixelBufferAttachments: Bool = true, audioSettings:[String:Any]? = nil, audioSourceFormatHint:CMFormatDescription? = nil) throws {
 
@@ -301,6 +303,9 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             
             self.state = .finished
             
+            self.assetWriterAudioInput?.markAsFinished()
+            self.assetWriterVideoInput.markAsFinished()
+            
             if let lastFrame = self.previousFrameTime {
                 // Resolve black frames at the end. Without this the end timestamp of the session's samples could be either video or audio.
                 // Documentation: "You do not need to call this method; if you call finishWriting without
@@ -312,7 +317,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             if let lastFrame = self.previousFrameTime, let startFrame = self.startFrameTime {
                 self.recordedDuration = lastFrame - startFrame
             }
-            print("MovieOutput did start finishing writing. Total frames appended:\(self.totalFramesAppended)")
+            print("MovieOutput did start finishing writing. Total frames appended video::\(self.totalVideoFramesAppended) audio:\(self.totalAudioFramesAppended)")
             self.assetWriter.finishWriting {
                 print("MovieOutput did finish writing")
                 completionCallback?()
@@ -361,7 +366,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
     }
     
     public func newFramebufferAvailable(_ framebuffer:Framebuffer, fromSourceIndex:UInt) {
-        glFinish();
+        glFinish()
         
         if previousFrameTime == nil && videoSampleBufferCache.count <= 0 && videoPixelBufferCache.isEmpty && (state == .caching || state == .writing) {
             debugPrint("starting process new framebuffer when previousFrameTime == nil")
@@ -373,6 +378,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             } else {
                 self?._processPixelBufferCache(framebuffer: framebuffer)
             }
+            self?.isProcessing = false
             sharedImageProcessingContext.runOperationAsynchronously {
                 framebuffer.unlock()
             }
@@ -382,6 +388,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             // This is done asynchronously to reduce the amount of work done on the sharedImageProcessingContext que
             // so we can decrease the risk of frames being dropped by the camera. I believe it is unlikely a backlog of framebuffers will occur
             // since the framebuffers come in much slower than during synchronized encoding.
+            guard !isProcessing else {
+                framebuffer.unlock()
+                return
+            }
+            isProcessing = true
             Self.movieProcessingContext.runOperationAsynchronously(work)
         }
         else {
@@ -465,12 +476,12 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
         
         while !assetWriterVideoInput.isReadyForMoreMediaData && shouldWaitForEncoding && !videoEncodingIsFinished {
-            synchronizedEncodingDebugPrint("Video waiting...")
+            print("Video waiting...")
             // Better to poll isReadyForMoreMediaData often since when it does become true
             // we don't want to risk letting framebuffers pile up in between poll intervals.
             usleep(100000) // 0.1 seconds
             if markIsFinishedAfterProcessing {
-                synchronizedEncodingDebugPrint("set videoEncodingIsFinished to true after processing")
+                print("set videoEncodingIsFinished to true after processing")
                 markIsFinishedAfterProcessing = false
                 videoEncodingIsFinished = true
             }
@@ -484,10 +495,6 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         } else {
             _renderAndCache(framebuffer: framebuffer)
             _appendPixelBuffersFromCache()
-        }
-        
-        if videoEncodingIsFinished {
-            assetWriterVideoInput.markAsFinished()
         }
     }
     
@@ -515,7 +522,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                         break
                     }
                     appendedBufferCount += 1
-                    self.totalFramesAppended += 1
+                    self.totalVideoFramesAppended += 1
                 }
             }
         } catch {
@@ -608,7 +615,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             }
             
             while(!self.assetWriterVideoInput.isReadyForMoreMediaData && self.shouldWaitForEncoding && !self.videoEncodingIsFinished) {
-                self.synchronizedEncodingDebugPrint("Video waiting...")
+                print("Video waiting...")
                 // Better to poll isReadyForMoreMediaData often since when it does become true
                 // we don't want to risk letting framebuffers pile up in between poll intervals.
                 usleep(100000) // 0.1 seconds
@@ -657,7 +664,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                     break
                 }
                 appendedBufferCount += 1
-                self.totalFramesAppended += 1
+                self.totalVideoFramesAppended += 1
             }
         } catch {
             print("WARNING: Trouble appending video sample buffer at time: \(time) \(error)")
@@ -725,7 +732,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                 print("Audio waiting...")
                 usleep(100000)
                 if !assetWriterAudioInput.isReadyForMoreMediaData {
-                    self.synchronizedEncodingDebugPrint("Audio still not ready, skip this runloop...")
+                    print("Audio still not ready, skip this runloop...")
                     return
                 }
             }
@@ -765,6 +772,7 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
                     break
                 }
                 appendedBufferCount += 1
+                totalAudioFramesAppended += 1
                 if shouldInvalidateAudioSampleWhenDone {
                     CMSampleBufferInvalidate(audioBuffer)
                 }
