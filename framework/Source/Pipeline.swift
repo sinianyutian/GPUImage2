@@ -2,12 +2,14 @@
 // MARK: Basic types
 import Foundation
 
-public protocol ImageSource {
+public protocol ImageSource: AnyObject {
+    var _needCheckSourceThread: Bool { get }
     var targets:TargetContainer { get }
     func transmitPreviousImage(to target:ImageConsumer, atIndex:UInt)
 }
 
-public protocol ImageConsumer:AnyObject {
+public protocol ImageConsumer: AnyObject {
+    var _needCheckConsumerThread: Bool { get }
     var maximumInputs:UInt { get }
     var sources:SourceContainer { get }
     
@@ -31,8 +33,14 @@ infix operator --> : AdditionPrecedence
 // MARK: Extensions and supporting types
 
 public extension ImageSource {
+    var _needCheckSourceThread: Bool {
+        return true
+    }
+    
     func addTarget(_ target:ImageConsumer, atTargetIndex:UInt? = nil) {
-        __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        if _needCheckSourceThread {
+            __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        }
         if let targetIndex = atTargetIndex {
             target.setSource(self, atIndex:targetIndex)
             targets.append(target, indexAtTarget:targetIndex)
@@ -50,7 +58,9 @@ public extension ImageSource {
     }
 
     func removeAllTargets() {
-        __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        if _needCheckSourceThread {
+            __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        }
         for (target, index) in targets {
             target.removeSourceAtIndex(index)
         }
@@ -58,7 +68,9 @@ public extension ImageSource {
     }
     
     func remove(_ target:ImageConsumer) {
-        __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        if _needCheckSourceThread {
+            __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        }
         for (testTarget, index) in targets {
             if(target === testTarget) {
                 target.removeSourceAtIndex(index)
@@ -89,16 +101,36 @@ public extension ImageSource {
 }
 
 public extension ImageConsumer {
+    var _needCheckConsumerThread: Bool {
+        return true
+    }
+    
     func addSource(_ source:ImageSource) -> UInt? {
+        if _needCheckConsumerThread {
+            __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        }
         return sources.append(source, maximumInputs:maximumInputs)
     }
     
     func setSource(_ source:ImageSource, atIndex:UInt) {
+        if _needCheckConsumerThread {
+            __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        }
         _ = sources.insert(source, atIndex:atIndex, maximumInputs:maximumInputs)
     }
 
     func removeSourceAtIndex(_ index:UInt) {
+        if _needCheckConsumerThread {
+            __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        }
         sources.removeAtIndex(index)
+    }
+    
+    func removeAllSources() {
+        if _needCheckConsumerThread {
+            __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
+        }
+        sources.sources.removeAll()
     }
 }
 
