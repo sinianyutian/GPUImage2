@@ -32,6 +32,7 @@ infix operator --> : AdditionPrecedence
 
 public extension ImageSource {
     func addTarget(_ target:ImageConsumer, atTargetIndex:UInt? = nil) {
+        __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
         if let targetIndex = atTargetIndex {
             target.setSource(self, atIndex:targetIndex)
             targets.append(target, indexAtTarget:targetIndex)
@@ -49,6 +50,7 @@ public extension ImageSource {
     }
 
     func removeAllTargets() {
+        __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
         for (target, index) in targets {
             target.removeSourceAtIndex(index)
         }
@@ -56,6 +58,7 @@ public extension ImageSource {
     }
     
     func remove(_ target:ImageConsumer) {
+        __dispatch_assert_queue(sharedImageProcessingContext.serialDispatchQueue)
         for (testTarget, index) in targets {
             if(target === testTarget) {
                 target.removeSourceAtIndex(index)
