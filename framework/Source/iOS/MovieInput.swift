@@ -15,21 +15,7 @@ public class MovieInput: ImageSource {
     
     public weak var delegate: MovieInputDelegate?
     
-    public var audioEncodingTarget:AudioEncodingTarget? {
-        didSet {
-            guard let audioEncodingTarget = audioEncodingTarget else {
-                return
-            }
-            do {
-                try audioEncodingTarget.activateAudioTrack()
-            } catch {
-                print("ERROR: Could not connect audio target with error: \(error)")
-            }
-            
-            // Call enableSynchronizedEncoding() again if they didn't set the audioEncodingTarget before setting synchronizedMovieOutput.
-            if(synchronizedMovieOutput != nil) { self.enableSynchronizedEncoding() }
-        }
-    }
+    public private(set) var audioEncodingTarget:AudioEncodingTarget?
     
     let yuvConversionShader:ShaderProgram
     public let asset:AVAsset
@@ -509,6 +495,19 @@ public class MovieInput: ImageSource {
                 self.updateTargetsWithFramebuffer(movieFramebuffer)
             }
         }
+    }
+    
+    public func setAudioEncodingTarget(_ target: AudioEncodingTarget?) throws {
+        audioEncodingTarget = target
+        
+        guard let audioEncodingTarget = audioEncodingTarget else {
+             return
+         }
+
+        try audioEncodingTarget.activateAudioTrack()
+         
+         // Call enableSynchronizedEncoding() again if they didn't set the audioEncodingTarget before setting synchronizedMovieOutput.
+         if(synchronizedMovieOutput != nil) { self.enableSynchronizedEncoding() }
     }
     
     // MARK: -

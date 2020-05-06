@@ -684,8 +684,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
             throw MovieOutputError.activeAudioTrackError
         }
         assetWriterAudioInput = AVAssetWriterInput(mediaType:.audio, outputSettings:self.audioSettings, sourceFormatHint:self.audioSourceFormatHint)
-
-        assetWriter.add(assetWriterAudioInput!)
+        let assetWriter = self.assetWriter
+        let audioInpupt = self.assetWriterAudioInput!
+        try NSObject.catchException {
+            assetWriter.add(audioInpupt)
+        }
         assetWriterAudioInput?.expectsMediaDataInRealTime = encodingLiveVideo
     }
     
