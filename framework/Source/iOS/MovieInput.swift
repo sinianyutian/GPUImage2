@@ -180,35 +180,38 @@ public class MovieInput: ImageSource {
             let outputSettings:[String:AnyObject] =
                 [(kCVPixelBufferPixelFormatTypeKey as String):NSNumber(value:Int32(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange))]
             
-            let assetReader = try AVAssetReader.init(asset: self.asset)
+            let assetReader = try AVAssetReader(asset: self.asset)
             
-            if(self.videoComposition == nil) {
-                let readerVideoTrackOutput = AVAssetReaderTrackOutput(track: self.asset.tracks(withMediaType: .video).first!, outputSettings:outputSettings)
-                readerVideoTrackOutput.alwaysCopiesSampleData = false
-                assetReader.add(readerVideoTrackOutput)
-            }
-            else {
-                let readerVideoTrackOutput = AVAssetReaderVideoCompositionOutput(videoTracks: self.asset.tracks(withMediaType: .video), videoSettings: outputSettings)
-                readerVideoTrackOutput.videoComposition = self.videoComposition
-                readerVideoTrackOutput.alwaysCopiesSampleData = false
-                assetReader.add(readerVideoTrackOutput)
-            }
-            
-            if let audioTrack = self.asset.tracks(withMediaType: .audio).first,
-                let _ = self.audioEncodingTarget {
-                let readerAudioTrackOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: audioSettings)
-                readerAudioTrackOutput.alwaysCopiesSampleData = false
-                assetReader.add(readerAudioTrackOutput)
-            }
-            
-            self.startTime = self.requestedStartTime
-            if let startTime = self.requestedStartTime ?? self.trimmedStartTime {
-                if let trimmedDuration = self.trimmedDuration, trimmedDuration.seconds > 0, CMTimeAdd(startTime, trimmedDuration) <= asset.duration {
-                    assetReader.timeRange = CMTimeRange(start: startTime, duration: trimmedDuration)
-                } else {
-                    assetReader.timeRange = CMTimeRange(start: startTime, duration: .positiveInfinity)
+            try NSObject.catchException {
+                if(self.videoComposition == nil) {
+                    let readerVideoTrackOutput = AVAssetReaderTrackOutput(track: self.asset.tracks(withMediaType: .video).first!, outputSettings:outputSettings)
+                    readerVideoTrackOutput.alwaysCopiesSampleData = false
+                    assetReader.add(readerVideoTrackOutput)
+                }
+                else {
+                    let readerVideoTrackOutput = AVAssetReaderVideoCompositionOutput(videoTracks: self.asset.tracks(withMediaType: .video), videoSettings: outputSettings)
+                    readerVideoTrackOutput.videoComposition = self.videoComposition
+                    readerVideoTrackOutput.alwaysCopiesSampleData = false
+                    assetReader.add(readerVideoTrackOutput)
+                }
+                
+                if let audioTrack = self.asset.tracks(withMediaType: .audio).first,
+                    let _ = self.audioEncodingTarget {
+                    let readerAudioTrackOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: self.audioSettings)
+                    readerAudioTrackOutput.alwaysCopiesSampleData = false
+                    assetReader.add(readerAudioTrackOutput)
+                }
+                
+                self.startTime = self.requestedStartTime
+                if let startTime = self.requestedStartTime ?? self.trimmedStartTime {
+                    if let trimmedDuration = self.trimmedDuration, trimmedDuration.seconds > 0, CMTimeAdd(startTime, trimmedDuration) <= self.asset.duration {
+                        assetReader.timeRange = CMTimeRange(start: startTime, duration: trimmedDuration)
+                    } else {
+                        assetReader.timeRange = CMTimeRange(start: startTime, duration: .positiveInfinity)
+                    }
                 }
             }
+            
             self.requestedStartTime = nil
             self.currentTime = nil
             self.actualStartTime = nil
