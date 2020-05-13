@@ -65,9 +65,9 @@ public class MovieCache: ImageConsumer, AudioEncodingTarget {
         }
     }
     
-    public func stopCaching() {
+    public func stopCaching(needsCancel: Bool = false) {
         MovieOutput.movieProcessingContext.runOperationAsynchronously { [weak self] in
-            self?._stopCaching()
+            self?._stopCaching(needsCancel: needsCancel)
         }
     }
 }
@@ -183,7 +183,10 @@ private extension MovieCache {
         self.movieOutput = nil
     }
     
-    func _stopCaching() {
+    func _stopCaching(needsCancel: Bool) {
+        if needsCancel && state == .writing {
+            _cancelWriting()
+        }
         guard _tryTransitingState(to: .idle) else { return }
         print("stop caching")
         _cleanBufferCaches()
