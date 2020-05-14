@@ -115,7 +115,7 @@ private extension MovieCache {
              (.idle, .caching), (.idle, .writing), (.idle, .canceled),
              (.caching, .writing), (.caching, .stopped), (.caching, .canceled), (.caching, .idle),
              (.writing, .stopped), (.writing, .canceled),
-             (.stopped, .idle), (.stopped, .writing),
+             (.stopped, .idle), (.stopped, .writing), (.stopped, .canceled),
              (.canceled, .idle), (.canceled, .writing):
             debugPrint("state transite from:\(state) to:\(newState)")
             state = newState
@@ -135,6 +135,7 @@ private extension MovieCache {
     
     func _setMovieOutput(_ movieOutput: MovieOutput) {
         guard state != .writing || self.movieOutput == nil else {
+            print("Should not set MovieOutput during writing")
             assertionFailure("Should not set MovieOutput during writing")
             return
         }
