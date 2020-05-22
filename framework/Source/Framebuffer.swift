@@ -43,7 +43,7 @@ public enum FramebufferTimingStyle {
     }
 }
 
-public class Framebuffer {
+public class Framebuffer: Hashable {
     public var timingStyle:FramebufferTimingStyle = .stillImage
     public var orientation:ImageOrientation
     public var userInfo:[AnyHashable:Any]?
@@ -58,6 +58,7 @@ public class Framebuffer {
 
     let hash:Int64
     let textureOverride:Bool
+    let id = UUID().uuidString
     
     unowned var context:OpenGLContext
     
@@ -187,6 +188,14 @@ public class Framebuffer {
             framebufferRetainCount = 0
             cache?.returnToCache(self)
         }
+    }
+    
+    public static func == (lhs: Framebuffer, rhs: Framebuffer) -> Bool {
+        return lhs.id == rhs.id
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 }
 

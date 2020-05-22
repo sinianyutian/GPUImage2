@@ -15,7 +15,7 @@
 // TODO: Add mechanism to purge framebuffers on low memory
 
 public class FramebufferCache {
-    var framebufferCache = [Int64:[Framebuffer]]()
+    var framebufferCache = [Int64:Set<Framebuffer>]()
     let context:OpenGLContext
     
     init(context:OpenGLContext) {
@@ -32,7 +32,7 @@ public class FramebufferCache {
         
         if ((framebufferCache[hash]?.count ?? -1) > 0) {
             //print("Restoring previous framebuffer")
-            framebuffer = framebufferCache[hash]!.removeLast()
+            framebuffer = framebufferCache[hash]!.removeFirst()
             framebuffer.orientation = orientation
         } else {
             do {
@@ -55,9 +55,13 @@ public class FramebufferCache {
         //sprint("Returning to cache: \(framebuffer)")
         context.runOperationSynchronously{
             if (self.framebufferCache[framebuffer.hash] != nil) {
-                self.framebufferCache[framebuffer.hash]!.append(framebuffer)
+                if self.framebufferCache[framebuffer.hash]!.contains(framebuffer) {
+                    print("WARNING: add duplicated buffer to cache.")
+                } else {
+                    self.framebufferCache[framebuffer.hash]!.insert(framebuffer)
+                }
             } else {
-                self.framebufferCache[framebuffer.hash] = [framebuffer]
+                self.framebufferCache[framebuffer.hash] = Set<Framebuffer>([framebuffer])
             }
         }
     }
