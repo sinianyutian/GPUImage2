@@ -146,6 +146,7 @@ public class MovieInput: ImageSource {
     public func cancel() {
         self.currentThread?.cancel()
         self.currentThread = nil
+        (self.audioEncodingTarget as? MovieOutput)?.cancelRecodingImmediately()
         synchronizedEncodingDebugPrint("MovieInput cancel")
     }
     

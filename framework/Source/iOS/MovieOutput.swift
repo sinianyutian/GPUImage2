@@ -336,6 +336,11 @@ public class MovieOutput: ImageConsumer, AudioEncodingTarget {
         }
     }
     
+    public func cancelRecodingImmediately() {
+        self.audioEncodingIsFinished = true
+        self.videoEncodingIsFinished = true
+    }
+    
     public func newFramebufferAvailable(_ framebuffer:Framebuffer, fromSourceIndex:UInt) {
         glFinish()
         
